@@ -38,17 +38,16 @@ export async function criarCachorro(app, areaJogo) {
   });
   await sheet.parse();
 
-  const tamanho = 80;
+  const escala = 5;
   const sprite = new AnimatedSprite(sheet.animations['idle']);
   sprite.animationSpeed = 0.05;
   sprite.play();
-  sprite.width = tamanho;
-  sprite.height = tamanho;
+  sprite.scale.set(escala);
   sprite.anchor.set(0.5);
   sprite.x = app.screen.width / 2 - 120;
   sprite.y = areaJogo.top + areaJogo.height / 2;
   sprite._sheet = sheet;
-  sprite._tamanho = tamanho;
+  sprite._escala = escala;
 
   return sprite;
 }
@@ -63,9 +62,7 @@ export function atualizarCachorro(cachorro, alvo, areaJogo, velocidade) {
     cachorro.x += (dx / dist) * velocidade;
     cachorro.y += (dy / dist) * velocidade;
 
-    // Espelha horizontalmente conforme direção
-    const tam = cachorro._tamanho;
-    cachorro.width = dx < 0 ? -tam : tam;
+    cachorro.scale.x = dx < 0 ? -cachorro._escala : cachorro._escala;
 
     if (cachorro._animAtual !== 'andar') {
       cachorro.textures = cachorro._sheet.animations['andar'];
