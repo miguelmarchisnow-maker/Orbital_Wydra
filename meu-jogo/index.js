@@ -1,52 +1,69 @@
 import { Application } from 'pixi.js';
-import { criarTerreno, FRACAO_ALTURA_CEU } from './terreno/terreno.js';
-import {
-  configurarControles,
-  criarJogador,
-  atualizarJogador,
-} from './entidades/jogador.js';
-import { criarCachorro, atualizarCachorro } from './entidades/cachorro.js';
+import { criarMundo, atualizarMundo, getEstadoJogo } from './world/mundo.js';
+import { configurarCamera, atualizarCamera, getCamera, setCameraPos, setTipoJogador } from './player/player.js';
+import { criarMinimapa, atualizarMinimapa, onMinimapClick } from './hud/minimapa.js';
+import { criarPainel, atualizarPainel } from './hud/painel.js';
+import { criarTelaSelecao } from './hud/selecao.js';
+import { criarTutorial, atualizarTutorial } from './hud/tutorial.js';
+import { somVitoria, somDerrota } from './audio/som.js';
 
 const app = new Application();
 await app.init({
-  width: 1880,
-  height: 700,
-  backgroundColor: 0x1a1a2e,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  backgroundColor: 0x0a0a1a,
   resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
   antialias: true,
 });
 
+document.body.style.margin = '0';
+document.body.style.overflow = 'hidden';
 document.body.appendChild(app.canvas);
 
-const terreno = await criarTerreno(app);
-app.stage.addChild(terreno);
+window.addEventListener('resize', () => {
+  app.renderer.resize(window.innerWidth, window.innerHeight);
+});
 
-const alturaCeus = app.screen.height * FRACAO_ALTURA_CEU;
-const areaJogo = {
-  left: 0,
-  top: alturaCeus,
-  right: app.screen.width,
-  bottom: app.screen.height,
-  get width() {
-    return this.right - this.left;
-  },
-  get height() {
-    return this.bottom - this.top;
-  },
-};
+const tipoEscolhido = await criarTelaSelecao(app);
+setTipoJogador(tipoEscolhido);
 
-const cachorro = await criarCachorro(app, areaJogo);
-const jogador = await criarJogador(app, areaJogo);
+const mundo = await criarMundo(app, tipoEscolhido);
+app.stage.addChild(mundo.container);
 
-app.stage.addChild(cachorro);
-app.stage.addChild(jogador);
+// Câmera é o centro da visão em coords do mundo
+const planetaJogador = mundo.planetas.find(p => p.dados.dono === 'jogador');
+setCameraPos(planetaJogador.x, planetaJogador.y);
 
-configurarControles();
+configurarCamera(app, mundo);
 
-const velJogador = 4.2;
-const velCachorro = 2.8;
+const minimapa = criarMinimapa(app, mundo);
+app.stage.addChild(minimapa);
+
+onMinimapClick((worldX, worldY) => {
+  setCameraPos(worldX, worldY);
+});
+
+const painel = criarPainel(app);
+app.stage.addChild(painel);
+
+const tutorial = criarTutorial(app);
+app.stage.addChild(tutorial);
 
 app.ticker.add(() => {
-  atualizarJogador(jogador, areaJogo, velJogador);
-  atualizarCachorro(cachorro, jogador, areaJogo, velCachorro);
+  const camera = getCamera();
+  atualizarCamera(mundo, app);
+  atualizarMundo(mundo, app, camera);
+  atualizarMinimapa(minimapa, camera, app);
+  atualizarPainel(painel, mundo, tipoEscolhido, app);
+  atualizarTutorial(tutorial, mundo);
+
+  const estado = getEstadoJogo();
+  if (estado === 'vitoria' && !app._fimTocado) {
+    somVitoria();
+    app._fimTocado = true;
+  } else if (estado === 'derrota' && !app._fimTocado) {
+    somDerrota();
+    app._fimTocado = true;
+  }
 });
