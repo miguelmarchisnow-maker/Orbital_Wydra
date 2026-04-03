@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { criarFundo, atualizarFundo } from './fundo.js';
 import { criarPlaneta, criarPlanetaSprite } from './planeta.js';
+import { somConquista, somExplosao } from '../audio/som.js';
 
 const DONOS = {
   neutro: 0x888888,
@@ -83,7 +84,8 @@ export async function criarMundo(app, tipoJogador) {
 
   container.addChild(frotasContainer);
 
-  const mundo = { container, tamanho, planetas, fundo, frotas, frotasContainer, planetaSheet };
+  const efeitosConquista = [];
+  const mundo = { container, tamanho, planetas, fundo, frotas, frotasContainer, planetaSheet, tipoJogador, efeitosConquista };
 
   // Definir planeta do jogador (perto do centro)
   let maisPertoDocentro = planetas[0];
@@ -170,6 +172,21 @@ export function atualizarMundo(mundo, app, camera) {
   // Atualizar frotas
   atualizarFrotas(mundo);
 
+  // Atualizar efeitos de conquista
+  for (let i = mundo.efeitosConquista.length - 1; i >= 0; i--) {
+    const e = mundo.efeitosConquista[i];
+    e.frame++;
+    const t = e.frame / e.maxFrames;
+    const raio = e.raioMax * t;
+    const alpha = 0.6 * (1 - t);
+    e.gfx.clear();
+    e.gfx.circle(0, 0, raio).fill({ color: e.cor, alpha });
+    if (e.frame >= e.maxFrames) {
+      mundo.frotasContainer.removeChild(e.gfx);
+      mundo.efeitosConquista.splice(i, 1);
+    }
+  }
+
   // Victory/defeat check
   verificarEstadoJogo(mundo);
 }
@@ -212,10 +229,27 @@ function atualizarFrotas(mundo) {
       if (f.destino.dados.dono === f.dono) {
         f.destino.dados.tropas += f.qtd;
       } else {
+        somExplosao();
         f.destino.dados.tropas -= f.qtd;
         if (f.destino.dados.tropas < 0) {
           f.destino.dados.dono = f.dono;
           f.destino.dados.tropas = Math.abs(f.destino.dados.tropas);
+
+          // Expansionist bonus: multiply production on conquest
+          if (f.dono === 'jogador' && mundo.tipoJogador?.bonus?.producaoConquista) {
+            f.destino.dados.producao *= mundo.tipoJogador.bonus.producaoConquista;
+          }
+
+          somConquista();
+
+          // Efeito visual de conquista
+          const cor = DONOS[f.dono] || 0xffffff;
+          const efx = new Graphics();
+          efx.circle(0, 0, 1).fill({ color: cor, alpha: 0.6 });
+          efx.x = f.destino.x;
+          efx.y = f.destino.y;
+          frotasContainer.addChild(efx);
+          mundo.efeitosConquista.push({ gfx: efx, frame: 0, maxFrames: 30, raioMax: f.destino.dados.tamanho, cor });
         }
       }
 

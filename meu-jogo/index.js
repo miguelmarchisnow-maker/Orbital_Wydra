@@ -4,6 +4,8 @@ import { configurarCamera, atualizarCamera, getCamera, setCameraPos, setTipoJoga
 import { criarMinimapa, atualizarMinimapa, onMinimapClick } from './hud/minimapa.js';
 import { criarPainel, atualizarPainel } from './hud/painel.js';
 import { criarTelaSelecao } from './hud/selecao.js';
+import { criarTutorial, atualizarTutorial } from './hud/tutorial.js';
+import { somVitoria, somDerrota } from './audio/som.js';
 
 const app = new Application();
 await app.init({
@@ -45,10 +47,23 @@ onMinimapClick((worldX, worldY) => {
 const painel = criarPainel(app);
 app.stage.addChild(painel);
 
+const tutorial = criarTutorial(app);
+app.stage.addChild(tutorial);
+
 app.ticker.add(() => {
   const camera = getCamera();
   atualizarCamera(mundo, app);
   atualizarMundo(mundo, app, camera);
   atualizarMinimapa(minimapa, camera, app);
   atualizarPainel(painel, mundo, tipoEscolhido, app);
+  atualizarTutorial(tutorial, mundo);
+
+  const estado = getEstadoJogo();
+  if (estado === 'vitoria' && !app._fimTocado) {
+    somVitoria();
+    app._fimTocado = true;
+  } else if (estado === 'derrota' && !app._fimTocado) {
+    somDerrota();
+    app._fimTocado = true;
+  }
 });

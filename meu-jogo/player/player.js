@@ -1,4 +1,5 @@
 import { Graphics, Text } from 'pixi.js';
+import { somClique, somEnvio } from '../audio/som.js';
 
 const camera = { x: 0, y: 0, zoom: 1 };
 let _tipoJogador = null;
@@ -11,6 +12,7 @@ let cameraLastMouse = { x: 0, y: 0 };
 let dragOrigem = null;
 let dragActive = false;
 let dragMouse = { x: 0, y: 0 };
+let dragStartScreen = { x: 0, y: 0 };
 let dragLine = null;
 let dragPercentage = 50; // 10-100 in steps of 10
 let dragText = null;
@@ -89,6 +91,9 @@ export function configurarCamera(app, mundo) {
       const world = screenToWorld(e.clientX, e.clientY, app);
       const planeta = encontrarPlaneta(world.x, world.y, mundo);
 
+      dragStartScreen.x = e.clientX;
+      dragStartScreen.y = e.clientY;
+
       if (planeta && planeta.dados.dono === 'jogador') {
         // Left click on own planet — start troop drag
         dragOrigem = planeta;
@@ -96,8 +101,14 @@ export function configurarCamera(app, mundo) {
         dragMouse.x = e.clientX;
         dragMouse.y = e.clientY;
         dragPercentage = 50;
+      } else if (planeta) {
+        // Left click on enemy/neutral planet — track for selection on mouseup
+        dragOrigem = planeta;
+        dragActive = true;
+        dragMouse.x = e.clientX;
+        dragMouse.y = e.clientY;
       } else {
-        // Left click on empty/other — camera drag
+        // Left click on empty — camera drag
         cameraDragging = true;
         cameraLastMouse.x = e.clientX;
         cameraLastMouse.y = e.clientY;
@@ -134,11 +145,27 @@ export function configurarCamera(app, mundo) {
     }
 
     if (e.button === 0 && dragActive) {
-      const world = screenToWorld(e.clientX, e.clientY, app);
-      const destino = encontrarPlaneta(world.x, world.y, mundo);
+      const movedX = e.clientX - dragStartScreen.x;
+      const movedY = e.clientY - dragStartScreen.y;
+      const movedDist = Math.hypot(movedX, movedY);
 
-      if (destino && destino !== dragOrigem) {
-        enviarTropas(dragOrigem, destino, mundo, dragPercentage / 100);
+      if (movedDist < 5) {
+        // Click with barely any movement — select the planet
+        // Deselect previous
+        for (const p of mundo.planetas) p.dados.selecionado = false;
+        if (dragOrigem) {
+          dragOrigem.dados.selecionado = true;
+          somClique();
+        }
+      } else if (dragOrigem && dragOrigem.dados.dono === 'jogador') {
+        // Drag from own planet — send troops
+        const world = screenToWorld(e.clientX, e.clientY, app);
+        const destino = encontrarPlaneta(world.x, world.y, mundo);
+
+        if (destino && destino !== dragOrigem) {
+          enviarTropas(dragOrigem, destino, mundo, dragPercentage / 100);
+          somEnvio();
+        }
       }
 
       dragActive = false;
