@@ -322,6 +322,10 @@ export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screen
       _fogSource = new ImageSource({ resource: _fogCanvas });
       _fogTexture = new Texture({ source: _fogSource });
       _fogSprite = new Sprite(_fogTexture);
+    }
+
+    // Re-adicionar se foi removido (ex: visaoTotal toggle)
+    if (!_fogSprite.parent) {
       visao.addChild(_fogSprite);
     }
 
