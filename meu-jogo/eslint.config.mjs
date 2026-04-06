@@ -19,6 +19,7 @@ export default [
         requestAnimationFrame: 'readonly',
         AudioContext: 'readonly',
         Image: 'readonly',
+        localStorage: 'readonly',
       },
     },
   },

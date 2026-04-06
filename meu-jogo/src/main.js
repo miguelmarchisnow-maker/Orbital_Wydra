@@ -5,7 +5,7 @@ import { criarMinimapa, atualizarMinimapa, onMinimapClick } from './ui/minimapa.
 import { criarPainel, atualizarPainel, definirAcaoPainel } from './ui/painel.js';
 import { getTipos } from './ui/selecao.js';
 import { criarTutorial, atualizarTutorial } from './ui/tutorial.js';
-import { criarDebug, atualizarDebug, processarTeclaDebug } from './ui/debug.js';
+import { criarDebug, atualizarDebug, processarTeclaDebug, getRendererPreference } from './ui/debug.js';
 import { somVitoria, somDerrota } from './audio/som.js';
 
 const app = new Application();
@@ -16,6 +16,7 @@ await app.init({
   resolution: window.devicePixelRatio || 1,
   autoDensity: true,
   antialias: true,
+  preference: getRendererPreference(),
 });
 
 document.body.style.margin = '0';
@@ -54,11 +55,10 @@ definirAcaoPainel(painel, (acao, planeta) => {
 const tutorial = criarTutorial(app);
 app.stage.addChild(tutorial);
 
-const debug = criarDebug(app);
-app.stage.addChild(debug);
+const debug = criarDebug();
 
 window.addEventListener('keydown', (e) => {
-  processarTeclaDebug(e, debug);
+  processarTeclaDebug(e);
 });
 
 app.ticker.add(() => {

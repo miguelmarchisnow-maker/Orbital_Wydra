@@ -1,32 +1,9 @@
-import { Container, Graphics, Text } from 'pixi.js';
 import { getEstadoJogo, getPesquisaAtual, obterNaveSelecionada, profiling } from '../world/mundo.js';
 import { getMemoria, fogProfiling } from '../world/nevoa.js';
 import { getCamera } from '../core/player.js';
 
-const COR_FUNDO = 0x080e1a;
-const COR_BORDA = 0x1a3060;
-const COR_BORDA_ACCENT = 0x3a6090;
-const COR_TITULO = 0x60ccff;
-const COR_SECAO = 0x4a90cc;
-const COR_VALOR = 0xa0d8b0;
-const COR_CHEAT = 0xffcc40;
-const COR_CHEAT_ON = 0x60ff90;
-const COR_CHEAT_OFF = 0x885544;
-const COR_SEPARADOR = 0x162840;
-const COR_FPS_BOM = 0x60ff90;
-const COR_FPS_MEDIO = 0xffcc40;
-const COR_FPS_RUIM = 0xff5050;
-const FONTE = 'monospace';
-const TAMANHO_FONTE = 10;
-const PADDING_X = 12;
-const PADDING_Y = 8;
-const LINHA_H = 15;
-const LARGURA = 300;
 const THROTTLE_MS = 200;
-const MARGEM_DIREITA = 10;
-const MARGEM_TOPO = 40; // abaixo da top bar
 
-/** Estado global de cheats */
 export const cheats = {
   construcaoInstantanea: false,
   recursosInfinitos: false,
@@ -35,11 +12,12 @@ export const cheats = {
   velocidadeNave: false,
 };
 
-function criarTexto(text, cor = COR_VALOR, tamanho = TAMANHO_FONTE) {
-  return new Text({
-    text,
-    style: { fontSize: tamanho, fill: cor, fontFamily: FONTE },
-  });
+export function getRendererPreference() {
+  return localStorage.getItem('renderer') || 'webgl';
+}
+
+export function setRendererPreference(val) {
+  localStorage.setItem('renderer', val);
 }
 
 function formatarTempo(ms) {
@@ -49,239 +27,274 @@ function formatarTempo(ms) {
   return `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-function adicionarSecao(container, linhas, y, titulo, ids) {
-  // Título da seção
-  const tituloTxt = criarTexto(titulo, COR_SECAO, 9);
-  tituloTxt.x = PADDING_X;
-  tituloTxt.y = y;
-  container.addChild(tituloTxt);
-  y += LINHA_H - 2;
-
-  for (const id of ids) {
-    const txt = criarTexto('', COR_VALOR);
-    txt.x = PADDING_X + 4;
-    txt.y = y;
-    container.addChild(txt);
-    linhas[id] = txt;
-    y += LINHA_H;
-  }
-
-  return y;
-}
-
-function adicionarSeparador(container, y) {
-  const sep = new Graphics();
-  sep.rect(PADDING_X, y + 3, LARGURA - PADDING_X * 2, 1)
-    .fill({ color: COR_SEPARADOR, alpha: 0.6 });
-  container.addChild(sep);
-  return y + 8;
-}
-
-export function criarDebug(app) {
-  const container = new Container();
-  container.visible = false;
-  container.eventMode = 'none';
-  container.y = MARGEM_TOPO;
-
-  const bg = new Graphics();
-  container.addChild(bg);
-
-  const linhas = {};
-
-  // Título
-  const titulo = criarTexto('', COR_TITULO, 11);
-  titulo.x = PADDING_X;
-  titulo.y = PADDING_Y;
-  container.addChild(titulo);
-  linhas.titulo = titulo;
-
-  let y = PADDING_Y + LINHA_H + 2;
-
-  // Seções
-  y = adicionarSecao(container, linhas, y, 'PERFORMANCE', ['fps', 'camera', 'mundo']);
-  y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'ENTIDADES', ['planetas', 'naves', 'sistemas', 'fontesVisao']);
-  y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'ECONOMIA', ['recursos', 'pesquisa', 'estado']);
-  y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'SELECAO', ['selecao', 'construcao']);
-  y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'RENDER', ['neblina', 'containers']);
-  y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'PROFILING (ms/frame)', ['profLogica', 'profFundo', 'profFog', 'profFogCanvas', 'profFogUpload', 'profPlanetas', 'profRender', 'profTotal']);
-  y = adicionarSeparador(container, y);
-
-  // Cheats - título especial
-  const cheatTitulo = criarTexto('', COR_CHEAT, 9);
-  cheatTitulo.x = PADDING_X;
-  cheatTitulo.y = y;
-  container.addChild(cheatTitulo);
-  linhas.cheatsTitulo = cheatTitulo;
-  y += LINHA_H - 2;
-
-  const cheatIds = ['cheatConstrucao', 'cheatRecursos', 'cheatPesquisa', 'cheatVisao', 'cheatVelocidade'];
-  for (const id of cheatIds) {
-    const txt = criarTexto('', COR_CHEAT_OFF);
-    txt.x = PADDING_X + 4;
-    txt.y = y;
-    container.addChild(txt);
-    linhas[id] = txt;
-    y += LINHA_H;
-  }
-
-  const altura = y + PADDING_Y;
-
-  // Fundo com dupla borda
-  bg.roundRect(0, 0, LARGURA, altura, 6).fill({ color: COR_FUNDO, alpha: 0.92 });
-  bg.roundRect(0, 0, LARGURA, altura, 6).stroke({ color: COR_BORDA, width: 1.5, alpha: 0.8 });
-  bg.roundRect(1, 1, LARGURA - 2, altura - 2, 5).stroke({ color: COR_BORDA_ACCENT, width: 0.5, alpha: 0.3 });
-
-  // Linha de destaque no topo
-  bg.rect(8, 0, LARGURA - 16, 2).fill({ color: COR_TITULO, alpha: 0.4 });
-
-  container.x = app.screen.width - LARGURA - MARGEM_DIREITA;
-  container._linhas = linhas;
-  container._ultimaAtualizacao = 0;
-  container._largura = LARGURA;
-
-  return container;
-}
-
-export function toggleDebug(debug) {
-  debug.visible = !debug.visible;
-}
-
-function toggleCheat(nome) {
-  cheats[nome] = !cheats[nome];
-}
-
-export function processarTeclaDebug(e, debug) {
-  if (e.code === 'F3') {
-    e.preventDefault();
-    toggleDebug(debug);
-    return;
-  }
-
-  if (!debug.visible) return;
-
-  switch (e.code) {
-    case 'Digit1': toggleCheat('construcaoInstantanea'); break;
-    case 'Digit2': toggleCheat('recursosInfinitos'); break;
-    case 'Digit3': toggleCheat('pesquisaInstantanea'); break;
-    case 'Digit4': toggleCheat('visaoTotal'); break;
-    case 'Digit5': toggleCheat('velocidadeNave'); break;
-  }
+function corProf(v) {
+  if (v > 5) return '#ff5050';
+  if (v > 2) return '#ffcc40';
+  return '#60ff90';
 }
 
 function corFps(fps) {
-  if (fps >= 50) return COR_FPS_BOM;
-  if (fps >= 30) return COR_FPS_MEDIO;
-  return COR_FPS_RUIM;
+  if (fps >= 50) return '#60ff90';
+  if (fps >= 30) return '#ffcc40';
+  return '#ff5050';
+}
+
+function el(tag, styles, text) {
+  const e = document.createElement(tag);
+  if (styles) Object.assign(e.style, styles);
+  if (text) e.textContent = text;
+  return e;
+}
+
+function criarSecao(parent, titulo, ids, linhas) {
+  const section = el('div', { marginBottom: '6px' });
+  const t = el('div', { color: '#4a90cc', fontSize: '9px', marginBottom: '2px', letterSpacing: '1px' }, titulo);
+  section.appendChild(t);
+  for (const id of ids) {
+    const row = el('div', { padding: '1px 0 1px 4px' });
+    row.id = id;
+    section.appendChild(row);
+    linhas[id] = row;
+  }
+  parent.appendChild(section);
+  return section;
+}
+
+function criarCheat(parent, elId, label, cheatKey) {
+  const lbl = el('label', {
+    display: 'block', padding: '2px 0', cursor: 'pointer',
+    color: '#a0d8b0', fontSize: '10px',
+  });
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.id = elId;
+  cb.style.marginRight = '6px';
+  cb.style.accentColor = '#60ff90';
+  cb.addEventListener('change', () => { cheats[cheatKey] = cb.checked; });
+  lbl.appendChild(cb);
+  lbl.appendChild(document.createTextNode(label));
+  parent.appendChild(lbl);
+}
+
+function criarPopupHTML() {
+  const popup = el('div', {
+    display: 'none', position: 'fixed', top: '40px', right: '10px',
+    width: '320px', maxHeight: 'calc(100vh - 60px)', overflowY: 'auto',
+    background: 'rgba(8, 14, 26, 0.95)', border: '1px solid #1a3060',
+    borderRadius: '6px', fontFamily: 'monospace', fontSize: '11px',
+    color: '#a0d8b0', zIndex: '9999', pointerEvents: 'auto',
+    userSelect: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+  });
+  popup.id = 'debug-popup';
+
+  // Header
+  const header = el('div', {
+    background: '#101830', padding: '6px 12px', borderBottom: '1px solid #1a3060',
+    borderRadius: '6px 6px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  });
+  header.appendChild(el('span', { color: '#60ccff', fontSize: '12px', fontWeight: 'bold' }, 'DEBUG'));
+  header.appendChild(el('span', { color: '#556', fontSize: '10px' }, 'F3 fechar'));
+  popup.appendChild(header);
+
+  const body = el('div', { padding: '8px 12px' });
+  popup.appendChild(body);
+
+  const linhas = {};
+
+  // Renderer section
+  const rendSec = el('div', { marginBottom: '8px' });
+  rendSec.appendChild(el('div', { color: '#4a90cc', fontSize: '9px', marginBottom: '4px', letterSpacing: '1px' }, 'RENDERER'));
+  const rendRow = el('div', { display: 'flex', gap: '6px', alignItems: 'center' });
+
+  const select = document.createElement('select');
+  select.id = 'dbg-renderer';
+  Object.assign(select.style, { background: '#0a1020', color: '#60ccff', border: '1px solid #2a4070', borderRadius: '3px', padding: '2px 6px', fontFamily: 'monospace', fontSize: '10px' });
+  for (const [val, label] of [['webgl', 'WebGL (Hardware)'], ['webgpu', 'WebGPU (Hardware)']]) {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+  select.value = getRendererPreference();
+  rendRow.appendChild(select);
+
+  const btn = el('button', { background: '#1a3060', color: '#60ccff', border: '1px solid #2a4070', borderRadius: '3px', padding: '2px 8px', fontFamily: 'monospace', fontSize: '10px', cursor: 'pointer' }, 'Aplicar');
+  btn.addEventListener('click', () => {
+    setRendererPreference(select.value);
+    window.location.reload();
+  });
+  rendRow.appendChild(btn);
+
+  const rendAtual = el('span', { color: '#556', fontSize: '9px' });
+  rendAtual.id = 'dbg-renderer-atual';
+  rendRow.appendChild(rendAtual);
+
+  rendSec.appendChild(rendRow);
+  body.appendChild(rendSec);
+
+  // Seções de dados
+  criarSecao(body, 'PERFORMANCE', ['dbg-fps', 'dbg-camera', 'dbg-mundo'], linhas);
+  criarSecao(body, 'ENTIDADES', ['dbg-planetas', 'dbg-naves', 'dbg-sistemas', 'dbg-fontes'], linhas);
+  criarSecao(body, 'ECONOMIA', ['dbg-recursos', 'dbg-pesquisa', 'dbg-estado'], linhas);
+  criarSecao(body, 'SELECAO', ['dbg-selecao', 'dbg-construcao'], linhas);
+  criarSecao(body, 'RENDER', ['dbg-neblina', 'dbg-children'], linhas);
+
+  // Profiling com sub-itens indentados
+  const profSec = el('div', { marginBottom: '6px' });
+  const profTitle = el('div', { color: '#4a90cc', fontSize: '9px', marginBottom: '2px', letterSpacing: '1px' });
+  profTitle.textContent = 'PROFILING ';
+  const profSub = el('span', { color: '#556' });
+  profSub.textContent = '(ms/frame)';
+  profTitle.appendChild(profSub);
+  profSec.appendChild(profTitle);
+
+  const profIds = ['dbg-prof-logica', 'dbg-prof-fundo', 'dbg-prof-fog', 'dbg-prof-fog-draw', 'dbg-prof-fog-upload', 'dbg-prof-planetas', 'dbg-prof-render', 'dbg-prof-total'];
+  for (const id of profIds) {
+    const indent = id.includes('fog-draw') || id.includes('fog-upload') ? '16px' : '4px';
+    const bold = id.includes('total') ? 'bold' : 'normal';
+    const row = el('div', { padding: '1px 0', paddingLeft: indent, fontWeight: bold });
+    row.id = id;
+    profSec.appendChild(row);
+    linhas[id] = row;
+  }
+  body.appendChild(profSec);
+
+  // Cheats
+  const cheatSec = el('div', { marginBottom: '6px' });
+  cheatSec.appendChild(el('div', { color: '#ffcc40', fontSize: '9px', marginBottom: '2px', letterSpacing: '1px' }, 'CHEATS'));
+  criarCheat(cheatSec, 'cheat-construcao', 'Construcao instantanea [1]', 'construcaoInstantanea');
+  criarCheat(cheatSec, 'cheat-recursos', 'Recursos infinitos [2]', 'recursosInfinitos');
+  criarCheat(cheatSec, 'cheat-pesquisa', 'Pesquisa instantanea [3]', 'pesquisaInstantanea');
+  criarCheat(cheatSec, 'cheat-visao', 'Visao total [4]', 'visaoTotal');
+  criarCheat(cheatSec, 'cheat-velocidade', 'Nave 10x velocidade [5]', 'velocidadeNave');
+  body.appendChild(cheatSec);
+
+  // Block events from reaching game canvas
+  for (const evt of ['mousedown', 'mouseup', 'click', 'wheel']) {
+    popup.addEventListener(evt, e => e.stopPropagation());
+  }
+
+  document.body.appendChild(popup);
+  popup._linhas = linhas;
+  return popup;
+}
+
+let _popup = null;
+let _ultimaAtualizacao = 0;
+
+export function criarDebug() {
+  _popup = criarPopupHTML();
+  return _popup;
+}
+
+export function toggleDebug() {
+  if (!_popup) return;
+  _popup.style.display = _popup.style.display === 'none' ? 'block' : 'none';
+}
+
+export function processarTeclaDebug(e) {
+  if (e.code === 'F3') {
+    e.preventDefault();
+    toggleDebug();
+    return;
+  }
+
+  if (!_popup || _popup.style.display === 'none') return;
+
+  const cheatKeys = {
+    'Digit1': ['construcaoInstantanea', 'cheat-construcao'],
+    'Digit2': ['recursosInfinitos', 'cheat-recursos'],
+    'Digit3': ['pesquisaInstantanea', 'cheat-pesquisa'],
+    'Digit4': ['visaoTotal', 'cheat-visao'],
+    'Digit5': ['velocidadeNave', 'cheat-velocidade'],
+  };
+  const ck = cheatKeys[e.code];
+  if (ck) {
+    cheats[ck[0]] = !cheats[ck[0]];
+    const cb = _popup.querySelector(`#${ck[1]}`);
+    if (cb) cb.checked = cheats[ck[0]];
+  }
+}
+
+function setText(id, text, color) {
+  const e = _popup._linhas[id] || _popup.querySelector(`#${id}`);
+  if (!e) return;
+  e.textContent = text;
+  if (color) e.style.color = color;
+}
+
+function setProf(id, label, value) {
+  setText(id, `${label}: ${value.toFixed(2)}`, corProf(value));
 }
 
 export function atualizarDebug(debug, mundo, app) {
-  if (!debug.visible) return;
-
-  debug.x = app.screen.width - debug._largura - MARGEM_DIREITA;
+  if (!_popup || _popup.style.display === 'none') return;
 
   const agora = performance.now();
-  if (agora - debug._ultimaAtualizacao < THROTTLE_MS) return;
-  debug._ultimaAtualizacao = agora;
+  if (agora - _ultimaAtualizacao < THROTTLE_MS) return;
+  _ultimaAtualizacao = agora;
 
-  const l = debug._linhas;
   const cam = getCamera();
   const fps = Math.round(app.ticker.FPS);
   const delta = app.ticker.deltaMS.toFixed(1);
 
-  l.titulo.text = 'DEBUG  [F3 fechar]';
+  const rendererType = app.renderer?.name || app.renderer?.constructor?.name || '?';
+  setText('dbg-renderer-atual', `(${rendererType})`);
 
-  // Performance
-  l.fps.text = `FPS ${fps}  delta ${delta}ms`;
-  l.fps.style.fill = corFps(fps);
-  l.camera.text = `cam ${Math.round(cam.x)},${Math.round(cam.y)}  zoom ${cam.zoom.toFixed(2)}x`;
-  l.mundo.text = `mundo ${mundo.tamanho}px`;
+  setText('dbg-fps', `FPS ${fps}  delta ${delta}ms`, corFps(fps));
+  setText('dbg-camera', `cam ${Math.round(cam.x)},${Math.round(cam.y)}  zoom ${cam.zoom.toFixed(2)}x`);
+  setText('dbg-mundo', `mundo ${mundo.tamanho}px`);
 
-  // Entidades
   const planetasVis = mundo.planetas.filter(p => p._visivelAoJogador).length;
   const navesVis = mundo.naves.filter(n => n.gfx.visible).length;
-  l.planetas.text = `planetas ${planetasVis}/${mundo.planetas.length}`;
-  l.naves.text = `naves ${navesVis}/${mundo.naves.length}`;
-  l.sistemas.text = `sistemas ${mundo.sistemas.length}  sois ${mundo.sois.length}`;
-  l.fontesVisao.text = `fontes visao ${mundo.fontesVisao.length}`;
+  setText('dbg-planetas', `planetas ${planetasVis}/${mundo.planetas.length}`);
+  setText('dbg-naves', `naves ${navesVis}/${mundo.naves.length}`);
+  setText('dbg-sistemas', `sistemas ${mundo.sistemas.length}  sois ${mundo.sois.length}`);
+  setText('dbg-fontes', `fontes visao ${mundo.fontesVisao.length}`);
 
-  // Economia
   const r = mundo.recursosJogador;
-  l.recursos.text = `C:${Math.floor(r.comum)} R:${Math.floor(r.raro)} F:${Math.floor(r.combustivel)}`;
+  setText('dbg-recursos', `C:${Math.floor(r.comum)} R:${Math.floor(r.raro)} F:${Math.floor(r.combustivel)}`);
   const pesq = getPesquisaAtual(mundo);
-  l.pesquisa.text = pesq
-    ? `pesq ${pesq.categoria} T${pesq.tier} (${formatarTempo(pesq.tempoRestanteMs)})`
-    : 'pesq --';
-  l.estado.text = `estado: ${getEstadoJogo()}`;
+  setText('dbg-pesquisa', pesq ? `pesq ${pesq.categoria} T${pesq.tier} (${formatarTempo(pesq.tempoRestanteMs)})` : 'pesq --');
+  setText('dbg-estado', `estado: ${getEstadoJogo()}`);
 
-  // Seleção
   const naveSel = obterNaveSelecionada(mundo);
   const planetaSel = mundo.planetas.find(p => p.dados.selecionado);
   if (naveSel) {
-    l.selecao.text = `nave ${naveSel.tipo} T${naveSel.tier} [${naveSel.estado}]`;
+    setText('dbg-selecao', `nave ${naveSel.tipo} T${naveSel.tier} [${naveSel.estado}]`);
   } else if (planetaSel) {
     const d = planetaSel.dados;
-    l.selecao.text = `planeta ${d.dono} fab:${d.fabricas} inf:${d.infraestrutura}`;
+    setText('dbg-selecao', `planeta ${d.dono} fab:${d.fabricas} inf:${d.infraestrutura}`);
   } else {
-    l.selecao.text = '--';
+    setText('dbg-selecao', '--');
   }
 
   if (planetaSel?.dados.construcaoAtual) {
     const c = planetaSel.dados.construcaoAtual;
-    l.construcao.text = `${c.tipo} T${c.tierDestino} (${formatarTempo(c.tempoRestanteMs)})`;
+    setText('dbg-construcao', `${c.tipo} T${c.tierDestino} (${formatarTempo(c.tempoRestanteMs)})`);
   } else if (planetaSel?.dados.producaoNave) {
     const p = planetaSel.dados.producaoNave;
-    l.construcao.text = `${p.tipoNave} T${p.tier} (${formatarTempo(p.tempoRestanteMs)})`;
+    setText('dbg-construcao', `${p.tipoNave} T${p.tier} (${formatarTempo(p.tempoRestanteMs)})`);
   } else {
-    l.construcao.text = '--';
+    setText('dbg-construcao', '--');
   }
 
-  // Render
   let memoriasConhecidas = 0;
   for (const planeta of mundo.planetas) {
     const mem = getMemoria(planeta);
     if (mem?.conhecida) memoriasConhecidas++;
   }
-  l.neblina.text = `memorias ${memoriasConhecidas}/${mundo.planetas.length}`;
-  l.containers.text = `children mundo:${mundo.container.children.length} naves:${mundo.navesContainer.children.length}`;
+  setText('dbg-neblina', `memorias ${memoriasConhecidas}/${mundo.planetas.length}`);
+  setText('dbg-children', `children mundo:${mundo.container.children.length} naves:${mundo.navesContainer.children.length}`);
 
-  // Profiling
-  const fmt = (v) => v.toFixed(2);
-  const corProf = (v) => v > 5 ? COR_FPS_RUIM : v > 2 ? COR_FPS_MEDIO : COR_FPS_BOM;
-  l.profLogica.text = `logica: ${fmt(profiling.logica)}`;
-  l.profLogica.style.fill = corProf(profiling.logica);
-  l.profFundo.text = `fundo:  ${fmt(profiling.fundo)}`;
-  l.profFundo.style.fill = corProf(profiling.fundo);
-  l.profFog.text = `fog:    ${fmt(profiling.fog)}`;
-  l.profFog.style.fill = corProf(profiling.fog);
-  l.profFogCanvas.text = `  draw: ${fmt(fogProfiling.canvas)}`;
-  l.profFogCanvas.style.fill = corProf(fogProfiling.canvas);
-  l.profFogUpload.text = `  upld: ${fmt(fogProfiling.upload)}`;
-  l.profFogUpload.style.fill = corProf(fogProfiling.upload);
-  l.profPlanetas.text = `planet: ${fmt(profiling.planetas)}`;
-  l.profPlanetas.style.fill = corProf(profiling.planetas);
-  l.profRender.text = `render: ${fmt(profiling.render)}`;
-  l.profRender.style.fill = corProf(profiling.render);
-  l.profTotal.text = `TOTAL:  ${fmt(profiling.total)}`;
-  l.profTotal.style.fill = corProf(profiling.total);
-
-  // Cheats
-  l.cheatsTitulo.text = 'CHEATS [1-5]';
-  const cheatList = [
-    ['cheatConstrucao', '1 construcao inst.', cheats.construcaoInstantanea],
-    ['cheatRecursos', '2 recursos inf.', cheats.recursosInfinitos],
-    ['cheatPesquisa', '3 pesquisa inst.', cheats.pesquisaInstantanea],
-    ['cheatVisao', '4 visao total', cheats.visaoTotal],
-    ['cheatVelocidade', '5 nave 10x vel.', cheats.velocidadeNave],
-  ];
-  for (const [id, label, ativo] of cheatList) {
-    l[id].text = `${label}  ${ativo ? '[ON]' : '[OFF]'}`;
-    l[id].style.fill = ativo ? COR_CHEAT_ON : COR_CHEAT_OFF;
-  }
+  setProf('dbg-prof-logica', 'logica', profiling.logica);
+  setProf('dbg-prof-fundo', 'fundo ', profiling.fundo);
+  setProf('dbg-prof-fog', 'fog   ', profiling.fog);
+  setProf('dbg-prof-fog-draw', 'draw', fogProfiling.canvas);
+  setProf('dbg-prof-fog-upload', 'upld', fogProfiling.upload);
+  setProf('dbg-prof-planetas', 'planet', profiling.planetas);
+  setProf('dbg-prof-render', 'render', profiling.render);
+  setProf('dbg-prof-total', 'TOTAL ', profiling.total);
 
   if (cheats.recursosInfinitos) {
     mundo.recursosJogador.comum = Math.max(mundo.recursosJogador.comum, 9999);
