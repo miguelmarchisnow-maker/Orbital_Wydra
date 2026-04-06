@@ -7,13 +7,26 @@ const COR_FUNDO = 0x0a1020;
 const COR_BORDA = 0x2a4070;
 const COR_TITULO = 0x60ccff;
 const COR_VALOR = 0x60ff90;
+const COR_CHEAT = 0xffcc40;
+const COR_CHEAT_ON = 0x60ff90;
+const COR_CHEAT_OFF = 0xff6060;
 const COR_SEPARADOR = 0x1a3060;
 const FONTE = 'monospace';
 const TAMANHO_FONTE = 11;
 const PADDING = 10;
 const LINHA_H = 16;
-const LARGURA = 340;
+const LARGURA = 360;
 const THROTTLE_MS = 250;
+const MARGEM_DIREITA = 10;
+
+/** Estado global de cheats — importável por outros módulos */
+export const cheats = {
+  construcaoInstantanea: false,
+  recursosInfinitos: false,
+  pesquisaInstantanea: false,
+  visaoTotal: false,
+  velocidadeNave: false,
+};
 
 function criarTexto(text, cor = COR_VALOR) {
   return new Text({
@@ -33,11 +46,10 @@ function formatarTempo(ms) {
   return `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-export function criarDebug() {
+export function criarDebug(app) {
   const container = new Container();
   container.visible = false;
   container.eventMode = 'none';
-  container.x = 10;
   container.y = 10;
 
   const bg = new Graphics();
@@ -64,6 +76,13 @@ export function criarDebug() {
     'sep4',
     'neblina',
     'containers',
+    'sep5',
+    'cheatsTitulo',
+    'cheatConstrucao',
+    'cheatRecursos',
+    'cheatPesquisa',
+    'cheatVisao',
+    'cheatVelocidade',
   ];
 
   let y = PADDING;
@@ -78,7 +97,9 @@ export function criarDebug() {
       continue;
     }
 
-    const cor = id === 'titulo' ? COR_TITULO : COR_VALOR;
+    const cor = id === 'titulo' ? COR_TITULO
+      : id === 'cheatsTitulo' ? COR_CHEAT
+      : COR_VALOR;
     const txt = criarTexto('', cor);
     txt.x = PADDING;
     txt.y = y;
@@ -88,11 +109,15 @@ export function criarDebug() {
   }
 
   const altura = y + PADDING;
-  bg.roundRect(0, 0, LARGURA, altura, 4).fill({ color: COR_FUNDO, alpha: 0.85 });
+  bg.roundRect(0, 0, LARGURA, altura, 4).fill({ color: COR_FUNDO, alpha: 0.88 });
   bg.roundRect(0, 0, LARGURA, altura, 4).stroke({ color: COR_BORDA, width: 1, alpha: 0.7 });
+
+  // Posicionar no canto superior-direito
+  container.x = app.screen.width - LARGURA - MARGEM_DIREITA;
 
   container._linhas = linhas;
   container._ultimaAtualizacao = 0;
+  container._largura = LARGURA;
 
   return container;
 }
@@ -101,8 +126,38 @@ export function toggleDebug(debug) {
   debug.visible = !debug.visible;
 }
 
+function toggleCheat(nome) {
+  cheats[nome] = !cheats[nome];
+}
+
+export function processarTeclaDebug(e, debug) {
+  if (e.code === 'F3') {
+    e.preventDefault();
+    toggleDebug(debug);
+    return;
+  }
+
+  // Cheats só funcionam com debug aberto
+  if (!debug.visible) return;
+
+  switch (e.code) {
+    case 'Digit1': toggleCheat('construcaoInstantanea'); break;
+    case 'Digit2': toggleCheat('recursosInfinitos'); break;
+    case 'Digit3': toggleCheat('pesquisaInstantanea'); break;
+    case 'Digit4': toggleCheat('visaoTotal'); break;
+    case 'Digit5': toggleCheat('velocidadeNave'); break;
+  }
+}
+
+function statusCheat(ativo) {
+  return ativo ? 'ON' : 'OFF';
+}
+
 export function atualizarDebug(debug, mundo, app) {
   if (!debug.visible) return;
+
+  // Reposicionar no resize
+  debug.x = app.screen.width - debug._largura - MARGEM_DIREITA;
 
   const agora = performance.now();
   if (agora - debug._ultimaAtualizacao < THROTTLE_MS) return;
@@ -114,7 +169,7 @@ export function atualizarDebug(debug, mundo, app) {
   const delta = app.ticker.deltaMS.toFixed(1);
 
   // Performance
-  l.titulo.text = '[ DEBUG ]';
+  l.titulo.text = '[ DEBUG ]  F3 fechar';
   l.fps.text = `FPS: ${fps}  |  Delta: ${delta}ms`;
   l.camera.text = `Zoom: ${cam.zoom.toFixed(2)}x  |  Cam: ${Math.round(cam.x)}, ${Math.round(cam.y)}`;
   l.mundo.text = `Mundo: ${mundo.tamanho}px`;
@@ -170,4 +225,26 @@ export function atualizarDebug(debug, mundo, app) {
 
   l.neblina.text = `Memorias: ${memoriasConhecidas}/${mundo.planetas.length}`;
   l.containers.text = `Children: mundo=${mundo.container.children.length} naves=${mundo.navesContainer.children.length}`;
+
+  // Cheats
+  l.cheatsTitulo.text = '[ CHEATS ]  teclas 1-5';
+  l.cheatConstrucao.text = `1: Construcao instantanea  [${statusCheat(cheats.construcaoInstantanea)}]`;
+  l.cheatRecursos.text = `2: Recursos infinitos      [${statusCheat(cheats.recursosInfinitos)}]`;
+  l.cheatPesquisa.text = `3: Pesquisa instantanea    [${statusCheat(cheats.pesquisaInstantanea)}]`;
+  l.cheatVisao.text = `4: Visao total             [${statusCheat(cheats.visaoTotal)}]`;
+  l.cheatVelocidade.text = `5: Nave 10x velocidade     [${statusCheat(cheats.velocidadeNave)}]`;
+
+  // Cores dinâmicas para cheats
+  l.cheatConstrucao.style.fill = cheats.construcaoInstantanea ? COR_CHEAT_ON : COR_CHEAT_OFF;
+  l.cheatRecursos.style.fill = cheats.recursosInfinitos ? COR_CHEAT_ON : COR_CHEAT_OFF;
+  l.cheatPesquisa.style.fill = cheats.pesquisaInstantanea ? COR_CHEAT_ON : COR_CHEAT_OFF;
+  l.cheatVisao.style.fill = cheats.visaoTotal ? COR_CHEAT_ON : COR_CHEAT_OFF;
+  l.cheatVelocidade.style.fill = cheats.velocidadeNave ? COR_CHEAT_ON : COR_CHEAT_OFF;
+
+  // Aplicar cheats de recursos
+  if (cheats.recursosInfinitos) {
+    mundo.recursosJogador.comum = Math.max(mundo.recursosJogador.comum, 9999);
+    mundo.recursosJogador.raro = Math.max(mundo.recursosJogador.raro, 9999);
+    mundo.recursosJogador.combustivel = Math.max(mundo.recursosJogador.combustivel, 9999);
+  }
 }

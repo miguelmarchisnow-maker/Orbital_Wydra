@@ -1,4 +1,5 @@
 import { Container, Graphics } from 'pixi.js';
+import { cheats } from '../ui/debug.js';
 import {
   criarCamadaMemoria,
   criarMemoriaVisualPlaneta,
@@ -527,7 +528,8 @@ function atualizarFilasPlaneta(mundo, planeta, deltaMs) {
 
   const construcao = planeta.dados.construcaoAtual;
   if (construcao) {
-    construcao.tempoRestanteMs = Math.max(0, construcao.tempoRestanteMs - deltaMs);
+    if (cheats.construcaoInstantanea) construcao.tempoRestanteMs = 0;
+    else construcao.tempoRestanteMs = Math.max(0, construcao.tempoRestanteMs - deltaMs);
     if (construcao.tempoRestanteMs <= 0) {
       if (construcao.tipo === 'fabrica') planeta.dados.fabricas = construcao.tierDestino;
       if (construcao.tipo === 'infraestrutura') planeta.dados.infraestrutura = construcao.tierDestino;
@@ -538,7 +540,8 @@ function atualizarFilasPlaneta(mundo, planeta, deltaMs) {
 
   const producao = planeta.dados.producaoNave;
   if (producao) {
-    producao.tempoRestanteMs = Math.max(0, producao.tempoRestanteMs - deltaMs);
+    if (cheats.construcaoInstantanea) producao.tempoRestanteMs = 0;
+    else producao.tempoRestanteMs = Math.max(0, producao.tempoRestanteMs - deltaMs);
     if (producao.tempoRestanteMs <= 0) {
       planeta.dados.producaoNave = null;
       const tipoNave = producao.tipoNave || producao.tipo || 'colonizadora';
@@ -570,14 +573,19 @@ function atualizarCampoDeVisao(mundo) {
   }
 
   mundo.fontesVisao = fontesVisao;
-  desenharNeblinaVisao(mundo, fontesVisao);
+  if (cheats.visaoTotal) {
+    mundo.visaoContainer.clear();
+  } else {
+    desenharNeblinaVisao(mundo, fontesVisao);
+  }
 
   for (const sol of mundo.sois) {
-    sol._visivelAoJogador = pontoDentroDaVisao(sol.x, sol.y, fontesVisao);
+    sol._visivelAoJogador = cheats.visaoTotal || pontoDentroDaVisao(sol.x, sol.y, fontesVisao);
   }
 
   for (const planeta of mundo.planetas) {
     planeta._visivelAoJogador =
+      cheats.visaoTotal ||
       planeta.dados.dono === 'jogador' ||
       pontoDentroDaVisao(planeta.x, planeta.y, fontesVisao);
 
@@ -601,8 +609,9 @@ function atualizarNaves(mundo, deltaMs) {
       const dy = alvo.y - nave.y;
       const dist = Math.hypot(dx, dy);
       const stopDist = obterRaioAlvo(alvo);
+      const velReal = VELOCIDADE_NAVE * (cheats.velocidadeNave ? 10 : 1);
 
-      if (dist <= stopDist + VELOCIDADE_NAVE * deltaMs) {
+      if (dist <= stopDist + velReal * deltaMs) {
         if (nave.tipo === 'colonizadora' && alvo._tipoAlvo === 'planeta' && alvo.dados.dono === 'neutro') {
           finalizarColonizacao(mundo, nave, alvo);
           continue;
@@ -618,8 +627,8 @@ function atualizarNaves(mundo, deltaMs) {
           entrarEmOrbita(nave, alvo);
         }
       } else if (dist > 0) {
-        nave.x += (dx / dist) * VELOCIDADE_NAVE * deltaMs;
-        nave.y += (dy / dist) * VELOCIDADE_NAVE * deltaMs;
+        nave.x += (dx / dist) * velReal * deltaMs;
+        nave.y += (dy / dist) * velReal * deltaMs;
       }
     }
 
@@ -637,7 +646,8 @@ function atualizarNaves(mundo, deltaMs) {
 function atualizarPesquisaGlobal(mundo, deltaMs) {
   const p = mundo.pesquisaAtual;
   if (!p) return;
-  p.tempoRestanteMs = Math.max(0, p.tempoRestanteMs - deltaMs);
+  if (cheats.pesquisaInstantanea) p.tempoRestanteMs = 0;
+  else p.tempoRestanteMs = Math.max(0, p.tempoRestanteMs - deltaMs);
   if (p.tempoRestanteMs <= 0) {
     const arr = mundo.pesquisas[p.categoria];
     if (arr) arr[p.tier - 1] = true;
