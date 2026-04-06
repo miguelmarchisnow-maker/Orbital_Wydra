@@ -246,18 +246,24 @@ export function removerMemoriaPlaneta(mundo, planeta) {
 
 const ALPHA_NEBLINA = 0.75;
 const COR_NEBLINA = 0x020510;
+const FOG_THROTTLE_FRAMES = 3; // redesenha a cada N frames
+
+let _fogFrameCount = 0;
 
 /**
- * Fog de guerra baseado na viewport.
- * Desenha um rect escuro cobrindo apenas a tela visível + margem,
- * depois recorta círculos para as fontes de visão.
+ * Fog de guerra viewport-based com throttle.
+ * Rect cobrindo a viewport + margem, com círculos cortados.
+ * Throttled para não redesenhar todo frame.
  */
 export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screenH, zoom) {
+  _fogFrameCount++;
+  if (_fogFrameCount % FOG_THROTTLE_FRAMES !== 0) return;
+
   const g = mundo.visaoContainer;
   g.clear();
 
   const invZoom = 1 / (zoom || 1);
-  const margem = 500 * invZoom;
+  const margem = 600 * invZoom;
   const rx = camera.x - margem;
   const ry = camera.y - margem;
   const rw = screenW * invZoom + margem * 2;
