@@ -247,82 +247,103 @@ export function removerMemoriaPlaneta(mundo, planeta) {
 import { Sprite, Texture, ImageSource } from 'pixi.js';
 
 const FOG_ALPHA = 0.75;
-const FOG_SCALE = 0.5;
+// Resolução fixa do canvas fog — independente do zoom
+const FOG_MAX_W = 960;
+const FOG_MAX_H = 540;
+const FOG_THROTTLE = 3; // redesenha a cada N frames
 
 let _fogCanvas = null;
 let _fogCtx = null;
 let _fogSprite = null;
 let _fogSource = null;
 let _fogTexture = null;
+let _fogFrame = 0;
+
+/** Sub-profiling do fog */
+export const fogProfiling = { canvas: 0, upload: 0 };
+let _fogProfSoma = { canvas: 0, upload: 0 };
+let _fogProfFrames = 0;
 
 export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screenH, zoom) {
+  _fogFrame++;
+
   const invZoom = 1 / (zoom || 1);
-  const margem = 800 * invZoom;
+  const margem = 400 * invZoom;
 
   const worldX = camera.x - margem;
   const worldY = camera.y - margem;
   const worldW = screenW * invZoom + margem * 2;
   const worldH = screenH * invZoom + margem * 2;
 
-  const canvasW = Math.ceil(worldW * FOG_SCALE);
-  const canvasH = Math.ceil(worldH * FOG_SCALE);
+  // Resolução fixa — nunca muda com zoom
+  const canvasW = FOG_MAX_W;
+  const canvasH = FOG_MAX_H;
+  const scaleX = canvasW / worldW;
+  const scaleY = canvasH / worldH;
 
-  // Recriar canvas se tamanho mudou
-  let canvasMudou = false;
-  if (!_fogCanvas || _fogCanvas.width !== canvasW || _fogCanvas.height !== canvasH) {
+  if (!_fogCanvas) {
     _fogCanvas = document.createElement('canvas');
     _fogCanvas.width = canvasW;
     _fogCanvas.height = canvasH;
     _fogCtx = _fogCanvas.getContext('2d');
-    canvasMudou = true;
   }
 
-  const ctx = _fogCtx;
+  // Só redesenhar canvas a cada N frames
+  const redesenhar = _fogFrame % FOG_THROTTLE === 0;
 
-  // Preencher com escuridão
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = `rgba(2, 5, 16, ${FOG_ALPHA})`;
-  ctx.fillRect(0, 0, canvasW, canvasH);
+  if (redesenhar) {
+    const t0 = performance.now();
+    const ctx = _fogCtx;
 
-  // Recortar círculos de visão
-  ctx.globalCompositeOperation = 'destination-out';
-  for (const fonte of fontesVisao) {
-    const cx = (fonte.x - worldX) * FOG_SCALE;
-    const cy = (fonte.y - worldY) * FOG_SCALE;
-    const cr = fonte.raio * FOG_SCALE;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(2, 5, 16, ${FOG_ALPHA})`;
+    ctx.fillRect(0, 0, canvasW, canvasH);
 
-    const grad = ctx.createRadialGradient(cx, cy, cr * 0.6, cx, cy, cr);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.75, 'rgba(255,255,255,0.95)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
-    ctx.fill();
-  }
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'white';
+    for (const fonte of fontesVisao) {
+      const cx = (fonte.x - worldX) * scaleX;
+      const cy = (fonte.y - worldY) * scaleY;
+      // Usar média dos scales para manter círculo proporcional
+      const cr = fonte.raio * Math.min(scaleX, scaleY);
 
-  const visao = mundo.visaoContainer;
-
-  // Recriar textura/sprite se canvas mudou de tamanho
-  if (canvasMudou || !_fogSprite) {
-    if (_fogSprite) {
-      visao.removeChild(_fogSprite);
-      _fogSprite.destroy();
-      _fogTexture.destroy(true);
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
     }
-    _fogSource = new ImageSource({ resource: _fogCanvas });
-    _fogTexture = new Texture({ source: _fogSource });
-    _fogSprite = new Sprite(_fogTexture);
-    visao.addChild(_fogSprite);
+
+    const t1 = performance.now();
+    _fogProfSoma.canvas += t1 - t0;
+
+    // Upload textura
+    const visao = mundo.visaoContainer;
+
+    if (!_fogSprite) {
+      _fogSource = new ImageSource({ resource: _fogCanvas });
+      _fogTexture = new Texture({ source: _fogSource });
+      _fogSprite = new Sprite(_fogTexture);
+      visao.addChild(_fogSprite);
+    }
+
+    _fogSource.resource = _fogCanvas;
+    _fogSource.update();
+
+    _fogProfSoma.upload += performance.now() - t1;
+    _fogProfFrames++;
+
+    if (_fogProfFrames >= 10) {
+      fogProfiling.canvas = _fogProfSoma.canvas / _fogProfFrames;
+      fogProfiling.upload = _fogProfSoma.upload / _fogProfFrames;
+      _fogProfSoma = { canvas: 0, upload: 0 };
+      _fogProfFrames = 0;
+    }
   }
 
-  // Atualizar textura com o conteúdo novo do canvas
-  _fogSource.resource = _fogCanvas;
-  _fogSource.update();
-
-  // Posicionar sprite no mundo
-  _fogSprite.x = worldX;
-  _fogSprite.y = worldY;
-  _fogSprite.width = worldW;
-  _fogSprite.height = worldH;
+  // Posição do sprite atualiza todo frame (câmera move)
+  if (_fogSprite) {
+    _fogSprite.x = worldX;
+    _fogSprite.y = worldY;
+    _fogSprite.width = worldW;
+    _fogSprite.height = worldH;
+  }
 }

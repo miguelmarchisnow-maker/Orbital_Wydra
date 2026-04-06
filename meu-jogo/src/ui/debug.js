@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { getEstadoJogo, getPesquisaAtual, obterNaveSelecionada, profiling } from '../world/mundo.js';
-import { getMemoria } from '../world/nevoa.js';
+import { getMemoria, fogProfiling } from '../world/nevoa.js';
 import { getCamera } from '../core/player.js';
 
 const COR_FUNDO = 0x080e1a;
@@ -108,7 +108,7 @@ export function criarDebug(app) {
   y = adicionarSeparador(container, y);
   y = adicionarSecao(container, linhas, y, 'RENDER', ['neblina', 'containers']);
   y = adicionarSeparador(container, y);
-  y = adicionarSecao(container, linhas, y, 'PROFILING (ms/frame)', ['profLogica', 'profFundo', 'profFog', 'profPlanetas', 'profRender', 'profTotal']);
+  y = adicionarSecao(container, linhas, y, 'PROFILING (ms/frame)', ['profLogica', 'profFundo', 'profFog', 'profFogCanvas', 'profFogUpload', 'profPlanetas', 'profRender', 'profTotal']);
   y = adicionarSeparador(container, y);
 
   // Cheats - título especial
@@ -258,6 +258,10 @@ export function atualizarDebug(debug, mundo, app) {
   l.profFundo.style.fill = corProf(profiling.fundo);
   l.profFog.text = `fog:    ${fmt(profiling.fog)}`;
   l.profFog.style.fill = corProf(profiling.fog);
+  l.profFogCanvas.text = `  draw: ${fmt(fogProfiling.canvas)}`;
+  l.profFogCanvas.style.fill = corProf(fogProfiling.canvas);
+  l.profFogUpload.text = `  upld: ${fmt(fogProfiling.upload)}`;
+  l.profFogUpload.style.fill = corProf(fogProfiling.upload);
   l.profPlanetas.text = `planet: ${fmt(profiling.planetas)}`;
   l.profPlanetas.style.fill = corProf(profiling.planetas);
   l.profRender.text = `render: ${fmt(profiling.render)}`;
