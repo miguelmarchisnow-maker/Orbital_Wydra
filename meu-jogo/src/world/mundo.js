@@ -1,4 +1,10 @@
 import { Container, Graphics } from 'pixi.js';
+import {
+  criarCamadaMemoria,
+  criarMemoriaVisualPlaneta,
+  desenharNeblinaVisao,
+  registrarMemoriaPlaneta,
+} from './nevoa.js';
 import { criarFundo, atualizarFundo } from './fundo.js';
 import {
   aplicarAparenciaTipoPlaneta,
@@ -356,10 +362,12 @@ export async function criarMundo(app, tipoJogador) {
   const frotasContainer = new Container();
   const navesContainer = new Container();
   const visaoContainer = new Graphics();
+  const memoriaPlanetasContainer = criarCamadaMemoria();
 
   container.addChild(frotasContainer);
   container.addChild(navesContainer);
   container.addChild(visaoContainer);
+  container.addChild(memoriaPlanetasContainer);
 
   const totalSistemas = 18;
   let tentativasSistema = 0;
@@ -407,10 +415,15 @@ export async function criarMundo(app, tipoJogador) {
     recursosJogador: { comum: 0, raro: 0, combustivel: 0 },
     ultimoTickMs: performance.now(),
     visaoContainer,
+    memoriaPlanetasContainer,
     fontesVisao: [],
     pesquisas: criarEstadoPesquisas(),
     pesquisaAtual: null,
   };
+
+  for (const planeta of planetas) {
+    criarMemoriaVisualPlaneta(mundo, planeta);
+  }
 
   const planetasComuns = planetas.filter((p) => p.dados.tipoPlaneta === TIPO_PLANETA.COMUM);
   const planetaInicial = planetasComuns[Math.floor(Math.random() * planetasComuns.length)];
@@ -419,6 +432,7 @@ export async function criarMundo(app, tipoJogador) {
   planetaInicial.dados.fabricas += tipoJogador?.bonus?.fabricasIniciais || 0;
   planetaInicial.dados.infraestrutura += tipoJogador?.bonus?.infraestruturaInicial || 0;
   desenharConstrucoesPlaneta(planetaInicial);
+  registrarMemoriaPlaneta(planetaInicial, DONOS, nomeTipoPlaneta);
 
   estadoJogo = 'jogando';
   return mundo;
@@ -564,15 +578,7 @@ function atualizarCampoDeVisao(mundo) {
   }
 
   mundo.fontesVisao = fontesVisao;
-
-  mundo.visaoContainer.clear();
-  for (const fonte of fontesVisao) {
-    mundo.visaoContainer.circle(fonte.x, fonte.y, fonte.raio).stroke({
-      color: 0xffffff,
-      width: 1.2,
-      alpha: 0.6,
-    });
-  }
+  desenharNeblinaVisao(mundo, fontesVisao);
 
   for (const sol of mundo.sois) {
     sol._visivelAoJogador = pontoDentroDaVisao(sol.x, sol.y, fontesVisao);
@@ -582,6 +588,11 @@ function atualizarCampoDeVisao(mundo) {
     planeta._visivelAoJogador =
       planeta.dados.dono === 'jogador' ||
       pontoDentroDaVisao(planeta.x, planeta.y, fontesVisao);
+
+    if (planeta._visivelAoJogador) {
+      registrarMemoriaPlaneta(planeta, DONOS, nomeTipoPlaneta);
+    }
+
     if (!planeta._visivelAoJogador && planeta.dados.selecionado) {
       planeta.dados.selecionado = false;
     }
@@ -736,6 +747,19 @@ export function atualizarMundo(mundo, app, camera) {
       const largura = planeta.dados.selecionado ? 4 : 2;
       anel.circle(0, 0, raio).stroke({ color: cor, width: largura, alpha: 0.8 });
       desenharConstrucoesPlaneta(planeta);
+    }
+
+    const memoria = planeta._memoria;
+    if (memoria) {
+      const memoriaDados = memoria.dados;
+      const memoriaNaTela =
+        !!memoriaDados &&
+        memoriaDados.x > esq && memoriaDados.x < dir &&
+        memoriaDados.y > cima && memoriaDados.y < baixo;
+      memoria.visual.visible =
+        memoria.conhecida &&
+        !planeta._visivelAoJogador &&
+        memoriaNaTela;
     }
   }
 
