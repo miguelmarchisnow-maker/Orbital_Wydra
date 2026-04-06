@@ -302,7 +302,7 @@ export function desenharNeblinaVisao(mundo: Mundo, fontesVisao: FonteVisao[], ca
   _fogFrame++;
 
   const invZoom = 1 / (zoom || 1);
-  const margem = 400 * invZoom;
+  const margem = 1500 * invZoom;
 
   const worldX = camera.x - margem;
   const worldY = camera.y - margem;
