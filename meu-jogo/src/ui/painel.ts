@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { Container, Graphics, Text } from 'pixi.js';
+import type { Application, Mundo, Planeta, TipoJogador, Pesquisa, AcaoNaveParsed } from '../types';
 import {
   calcularCustoTier,
   calcularTempoColonizadoraMs,
@@ -55,20 +55,72 @@ const SP = {
   boxLabelBg: 0x101830,
 };
 
-const LABEL_PESQUISA = { torreta: 'Torreta', cargueira: 'Cargueira', batedora: 'Batedora' };
+const LABEL_PESQUISA: Record<string, string> = { torreta: 'Torreta', cargueira: 'Cargueira', batedora: 'Batedora' };
 
 const PAD = 8;
 const BTN_H = 28;
 const SMALL_BTN = 28;
 
-function formatarTempo(ms) {
-  const totalSeg = Math.max(0, Math.ceil(ms / 1000));
+interface InfoField {
+  lbl: Text;
+  val: Text;
+}
+
+interface BotaoContainer extends Container {
+  _bg: Graphics;
+  _texto: Text;
+  _acao: string;
+  _labelNave?: string;
+}
+
+interface BoxContainer extends Container {
+  _bg: Graphics;
+  _lbl: Text;
+}
+
+interface PesquisaBotao {
+  botao: BotaoContainer;
+  categoria: string;
+  tier: number;
+}
+
+export interface PainelContainer extends Container {
+  _txtPlanetas: Text;
+  _txtComum: Text;
+  _txtRaro: Text;
+  _txtCombustivel: Text;
+  _txtTipo: Text;
+  _txtNaves: Text;
+  _txtContador: Text;
+  _statGroupBgs: Graphics;
+  _infoContainer: Container;
+  _infoBg: Graphics;
+  _infoNome: Text;
+  _infoFields: Record<string, InfoField>;
+  _boxEdificios: BoxContainer;
+  _boxNaves: BoxContainer;
+  _boxPesquisa: BoxContainer;
+  _catLabels: Record<string, Text>;
+  _btnToggleProducao: BotaoContainer;
+  _barraBg: Graphics;
+  _btnFabrica: BotaoContainer;
+  _btnInfra: BotaoContainer;
+  _btnNaves: BotaoContainer[];
+  _btnPesquisa: PesquisaBotao[];
+  _planetaSelecionado: Planeta | null;
+  _onAcaoPlaneta: ((acao: string, planeta: Planeta) => void) | null;
+  _painelProducaoExpandido: boolean;
+  _mundoRef: Mundo | null;
+}
+
+function formatarTempo(ms: number | null): string {
+  const totalSeg = Math.max(0, Math.ceil((ms ?? 0) / 1000));
   const min = Math.floor(totalSeg / 60);
   const seg = totalSeg % 60;
   return `${String(min).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
 }
 
-function drawPanelFrame(g, x, y, w, h) {
+function drawPanelFrame(g: Graphics, x: number, y: number, w: number, h: number): void {
   g.rect(x, y, w, h / 2).fill({ color: SP.panelBg });
   g.rect(x, y + h / 2, w, h / 2).fill({ color: SP.panelBgDark });
   g.roundRect(x, y, w, h, 4).stroke({ color: SP.panelBorder, width: 2 });
@@ -79,7 +131,7 @@ function drawPanelFrame(g, x, y, w, h) {
   g.moveTo(x + w - s, y + h).lineTo(x + w, y + h).lineTo(x + w, y + h - s).stroke({ color: SP.cornerAccent, width: 2 });
 }
 
-function drawTitleBar(g, x, y, w, h) {
+function drawTitleBar(g: Graphics, x: number, y: number, w: number, h: number): void {
   g.rect(x + 2, y, w - 4, h).fill({ color: SP.titleBg });
   g.rect(x + 2 + (w - 4) / 3, y, (w - 4) * 2 / 3, h).fill({ color: SP.titleBgLight, alpha: 0.5 });
   g.moveTo(x + 2, y + h).lineTo(x + w - 2, y + h).stroke({ color: SP.panelBorder, width: 1 });
@@ -87,18 +139,18 @@ function drawTitleBar(g, x, y, w, h) {
   g.moveTo(dx, dy - 3).lineTo(dx + 3, dy).lineTo(dx, dy + 3).lineTo(dx - 3, dy).lineTo(dx, dy - 3).fill({ color: SP.diamond });
 }
 
-function drawInfoField(g, x, y, w, h) {
+function drawInfoField(g: Graphics, x: number, y: number, w: number, h: number): void {
   g.rect(x, y, w, h).fill({ color: SP.fieldBg });
   g.rect(x, y, w, h).stroke({ color: SP.fieldBorder, width: 1 });
 }
 
 // Draw a labeled box container
-function drawBox(g, x, y, w, h) {
+function drawBox(g: Graphics, x: number, y: number, w: number, h: number): void {
   g.rect(x, y, w, h).fill({ color: SP.boxBg });
   g.roundRect(x, y, w, h, 3).stroke({ color: SP.boxBorder, width: 1 });
 }
 
-function drawBtn(g, x, y, w, h, disabled, action, done) {
+function drawBtn(g: Graphics, x: number, y: number, w: number, h: number, disabled: boolean, action: boolean, done: boolean): void {
   g.clear();
   if (disabled) {
     g.rect(x, y, w, h).fill({ color: SP.btnDisabledFace });
@@ -117,8 +169,8 @@ function drawBtn(g, x, y, w, h, disabled, action, done) {
   }
 }
 
-function criarBotaoAcao(parent, textoInicial, acao) {
-  const botao = new Container();
+function criarBotaoAcao(parent: Container, textoInicial: string, acao: string): BotaoContainer {
+  const botao = new Container() as BotaoContainer;
   botao.eventMode = 'static';
   botao.cursor = 'pointer';
   botao._acao = acao;
@@ -137,24 +189,25 @@ function criarBotaoAcao(parent, textoInicial, acao) {
 
   botao.on('pointertap', () => {
     // Walk up to find the root panel container
-    let p = botao.parent;
-    while (p && !p._onAcaoPlaneta) p = p.parent;
-    if (!p || typeof p._onAcaoPlaneta !== 'function') return;
-    if (!p._planetaSelecionado) return;
+    let p = botao.parent as Partial<PainelContainer> & Container | null;
+    while (p && !(p as Partial<PainelContainer>)._onAcaoPlaneta) p = p.parent as Partial<PainelContainer> & Container | null;
+    if (!p || typeof (p as PainelContainer)._onAcaoPlaneta !== 'function') return;
+    const painel = p as PainelContainer;
+    if (!painel._planetaSelecionado) return;
     if (botao._acao?.startsWith?.('pesquisa_')) {
       const m = botao._acao.match(/^pesquisa_(torreta|cargueira|batedora)_(\d)$/);
-      if (m) iniciarPesquisa(p._mundoRef, m[1], Number(m[2]));
+      if (m) iniciarPesquisa(painel._mundoRef!, m[1], Number(m[2]));
       return;
     }
-    p._onAcaoPlaneta(botao._acao, p._planetaSelecionado);
+    painel._onAcaoPlaneta?.(botao._acao, painel._planetaSelecionado);
   });
 
   parent.addChild(botao);
   return botao;
 }
 
-export function criarPainel() {
-  const container = new Container();
+export function criarPainel(): PainelContainer {
+  const container = new Container() as PainelContainer;
 
   // === TOP BAR ===
   const barraBg = new Graphics();
@@ -197,7 +250,7 @@ export function criarPainel() {
   infoContainer.addChild(infoNome);
 
   // Individual info rows (label + value pairs)
-  const infoFields = {};
+  const infoFields: Record<string, InfoField> = {};
   const fieldNames = ['dono', 'tipo', 'ciclo', 'prod', 'fabrica', 'infra', 'navesVoo', 'pesquisa', 'obra', 'filaNave'];
   for (const name of fieldNames) {
     const lbl = new Text({ text: '', style: { fontSize: 13, fill: SP.textLabel, fontFamily: 'monospace' } });
@@ -210,7 +263,7 @@ export function criarPainel() {
   // === 3 PRODUCTION CONTAINERS ===
 
   // Box 1: Edificios
-  const boxEdificios = new Container();
+  const boxEdificios = new Container() as BoxContainer;
   boxEdificios.visible = false;
   infoContainer.addChild(boxEdificios);
   const boxEdBg = new Graphics();
@@ -224,7 +277,7 @@ export function criarPainel() {
   const btnInfra = criarBotaoAcao(boxEdificios, '', 'infraestrutura');
 
   // Box 2: Naves
-  const boxNaves = new Container();
+  const boxNaves = new Container() as BoxContainer;
   boxNaves.visible = false;
   infoContainer.addChild(boxNaves);
   const boxNavBg = new Graphics();
@@ -234,8 +287,8 @@ export function criarPainel() {
   boxNaves.addChild(lblNav);
   boxNaves._lbl = lblNav;
 
-  const btnNaves = [];
-  const acoesNave = [{ acao: 'nave_colonizadora', label: 'Colonizadora' }];
+  const btnNaves: BotaoContainer[] = [];
+  const acoesNave: { acao: string; label: string }[] = [{ acao: 'nave_colonizadora', label: 'Colonizadora' }];
   for (const tipo of ['cargueira', 'batedora', 'torreta']) {
     for (let t = 1; t <= 5; t++) {
       acoesNave.push({ acao: `nave_${tipo}_${t}`, label: `${LABEL_PESQUISA[tipo] || tipo} T${t}` });
@@ -248,7 +301,7 @@ export function criarPainel() {
   }
 
   // Box 3: Pesquisa
-  const boxPesquisa = new Container();
+  const boxPesquisa = new Container() as BoxContainer;
   boxPesquisa.visible = false;
   infoContainer.addChild(boxPesquisa);
   const boxPesBg = new Graphics();
@@ -258,8 +311,8 @@ export function criarPainel() {
   boxPesquisa.addChild(lblPes);
   boxPesquisa._lbl = lblPes;
 
-  const btnPesquisa = [];
-  const catLabels = {};
+  const btnPesquisa: PesquisaBotao[] = [];
+  const catLabels: Record<string, Text> = {};
   for (const cat of ['torreta', 'cargueira', 'batedora']) {
     const rowLabel = new Text({ text: LABEL_PESQUISA[cat], style: { fontSize: 12, fill: SP.textLabel, fontFamily: 'monospace' } });
     boxPesquisa.addChild(rowLabel);
@@ -271,7 +324,7 @@ export function criarPainel() {
   }
 
   // Toggle button
-  const btnToggleProducao = new Container();
+  const btnToggleProducao = new Container() as BotaoContainer;
   btnToggleProducao.eventMode = 'static';
   btnToggleProducao.cursor = 'pointer';
   const bgToggle = new Graphics();
@@ -320,7 +373,7 @@ export function criarPainel() {
   return container;
 }
 
-export function atualizarPainel(painel, mundo, tipoJogador, app) {
+export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogador: TipoJogador, app: Application): void {
   painel._mundoRef = mundo;
 
   // === TOP BAR ===
@@ -336,7 +389,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   barra.moveTo(0, barH + 1).lineTo(sw, barH + 1).stroke({ color: 0x080c18, width: 1 });
 
   let qtdPlanetas = 0;
-  let planetaSel = null;
+  let planetaSel: Planeta | null = null;
   for (const planeta of mundo.planetas) {
     if (planeta.dados.dono === 'jogador') qtdPlanetas++;
     if (planeta.dados.selecionado) planetaSel = planeta;
@@ -364,7 +417,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   const sgGap = 6;
 
   // Helper: draw a stat group box and return its right edge x
-  function drawStatGroup(x, texts) {
+  function drawStatGroup(x: number, texts: Text[]): number {
     // Measure total width
     let totalW = sgPadX;
     for (const t of texts) totalW += t.width + 8;
@@ -440,11 +493,11 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   const tempoFabrica = calcularTempoConstrucaoMs(d.fabricas);
   const tempoInfra = calcularTempoConstrucaoMs(d.infraestrutura);
   const tempoColonizadora = calcularTempoColonizadoraMs(planetaSel);
-  const pesqAtual = getPesquisaAtual(mundo);
+  const pesqAtual: Pesquisa | null = getPesquisaAtual(mundo);
 
   // Build info rows: [label, value, valueColor]
   const f = painel._infoFields;
-  const rows = [
+  const rows: { key: string; label: string; value: string; color: number }[] = [
     { key: 'dono', label: 'Dono', value: d.dono, color: d.dono === 'jogador' ? SP.statCyan : 0x888888 },
     { key: 'tipo', label: 'Tipo', value: nomeTipoPlaneta(d.tipoPlaneta), color: SP.textValue },
     { key: 'ciclo', label: 'Ciclo', value: `${tempoRestanteSeg}s`, color: SP.statAmber },
@@ -462,7 +515,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
     rows.push({ key: 'obra', label: 'Obra', value: `${d.construcaoAtual.tipo} T${d.construcaoAtual.tierDestino} (${formatarTempo(d.construcaoAtual.tempoRestanteMs)})`, color: SP.statAmber });
   }
   if (d.producaoNave) {
-    const tn = d.producaoNave.tipoNave || d.producaoNave.tipo || 'nave';
+    const tn = d.producaoNave.tipoNave || 'nave';
     const tr = d.producaoNave.tier || 1;
     const nome = tn === 'colonizadora' ? 'Colonizadora' : `${LABEL_PESQUISA[tn] || tn} T${tr}`;
     rows.push({ key: 'filaNave', label: 'Nave', value: `${nome} (${formatarTempo(d.producaoNave.tempoRestanteMs)})`, color: SP.statCyan });
@@ -520,7 +573,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
 
     let visNavCount = 0;
     for (const btn of painel._btnNaves) {
-      const parsed = parseAcaoNave(btn._acao);
+      const parsed: AcaoNaveParsed | null = parseAcaoNave(btn._acao);
       if (parsed) {
         if (parsed.tipo === 'colonizadora') { if (d.fabricas >= 1) visNavCount++; }
         else { if (pesquisaTierLiberada(mundo, parsed.tipo, parsed.tier)) visNavCount++; }
@@ -585,7 +638,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   const colY = fieldY + fieldH + 6;
   const colStartX = PAD + 4;
 
-  // ──── COLUMN 1: EDIFICIOS ────
+  // ---- COLUMN 1: EDIFICIOS ----
   const col1X = colStartX;
   painel._boxEdificios.visible = true;
   painel._boxEdificios.x = col1X;
@@ -625,7 +678,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   drawBtn(painel._btnInfra._bg, 0, 0, edBtnW, BTN_H, desab, !desab, false);
   painel._btnInfra._texto.style.fill = desab ? SP.btnDisabledText : SP.btnActionText;
 
-  // ──── COLUMN 2: NAVES ────
+  // ---- COLUMN 2: NAVES ----
   const col2X = colStartX + edColW + colGap;
   painel._boxNaves.visible = true;
   painel._boxNaves.x = col2X;
@@ -640,10 +693,10 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   const navBtnW = navColW - boxPad * 2;
   let navI = 0;
   for (const btn of painel._btnNaves) {
-    const parsed = parseAcaoNave(btn._acao);
+    const parsed: AcaoNaveParsed | null = parseAcaoNave(btn._acao);
     if (!parsed) continue;
 
-    let vis, desabN, sub;
+    let vis: boolean, desabN: boolean, sub: string;
 
     if (parsed.tipo === 'colonizadora') {
       vis = d.fabricas >= 1;
@@ -670,7 +723,7 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
     }
   }
 
-  // ──── COLUMN 3: PESQUISA ────
+  // ---- COLUMN 3: PESQUISA ----
   const col3X = colStartX + edColW + colGap + navColW + colGap;
   painel._boxPesquisa.visible = true;
   painel._boxPesquisa.x = col3X;
@@ -717,6 +770,6 @@ export function atualizarPainel(painel, mundo, tipoJogador, app) {
   }
 }
 
-export function definirAcaoPainel(painel, callback) {
+export function definirAcaoPainel(painel: PainelContainer, callback: (acao: string, planeta: Planeta) => void): void {
   painel._onAcaoPlaneta = callback;
 }

@@ -103,7 +103,7 @@ export function configurarCamera(app: Application, mundo: Mundo): void {
         selecionarNave(mundo, clickInfo.nave);
         somClique();
       } else if (naveSelecionada && (clickInfo?.planeta || clickInfo?.sol)) {
-        enviarNaveParaAlvo(mundo, naveSelecionada, clickInfo!.planeta || clickInfo!.sol);
+        enviarNaveParaAlvo(mundo, naveSelecionada, (clickInfo!.planeta || clickInfo!.sol)!);
         somClique();
       } else if (naveSelecionada) {
         enviarNaveParaPosicao(mundo, naveSelecionada, destinoMapa.x, destinoMapa.y);

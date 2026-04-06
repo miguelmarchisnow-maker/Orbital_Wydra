@@ -1,5 +1,12 @@
-// @ts-nocheck
 import { Container, Graphics, Text, Assets, Texture, Rectangle, AnimatedSprite } from 'pixi.js';
+import type { Application, TipoJogador } from '../types';
+
+interface AnimatedCard extends Container {
+  _baseY: number;
+  _animDelay: number;
+  _animDone: boolean;
+  _planeta: AnimatedSprite;
+}
 
 const W95 = {
   bg: 0xd4d0c8,
@@ -16,7 +23,7 @@ const W95 = {
   btnFace: 0xd4d0c8,
 };
 
-const TIPOS = [
+const TIPOS: TipoJogador[] = [
   {
     nome: 'Industrial',
     desc: 'Producao +50%',
@@ -37,13 +44,13 @@ const TIPOS = [
   },
 ];
 
-export function getTipos() {
+export function getTipos(): TipoJogador[] {
   return TIPOS;
 }
 
-async function carregarFramesPlaneta() {
-  const texture = await Assets.load('/assets/planeta.png');
-  const frames = [];
+async function carregarFramesPlaneta(): Promise<Texture[]> {
+  const texture: Texture = await Assets.load('/assets/planeta.png');
+  const frames: Texture[] = [];
   const fw = 250;
   const fh = 250;
   const cols = 5;
@@ -61,9 +68,9 @@ async function carregarFramesPlaneta() {
   return frames;
 }
 
-export async function criarTelaSelecao(app) {
+export async function criarTelaSelecao(app: Application): Promise<TipoJogador> {
   const frames = await carregarFramesPlaneta();
-  return new Promise((resolve) => {
+  return new Promise<TipoJogador>((resolve) => {
 
     const overlay = new Container();
 
@@ -116,7 +123,7 @@ export async function criarTelaSelecao(app) {
 
     // Slide-in animation state
     dialog.alpha = 0;
-    dialog._animTime = 0;
+    (dialog as Container & { _animTime: number })._animTime = 0;
     const targetY = dialogY;
     dialog.y = dialogY + 30;
 
@@ -124,7 +131,7 @@ export async function criarTelaSelecao(app) {
     const cardY = 60;
 
     TIPOS.forEach((tipo, i) => {
-      const card = new Container();
+      const card = new Container() as AnimatedCard;
       card.x = cardStartX + i * (largCard + gap);
       card.y = cardY;
       card.eventMode = 'static';
@@ -138,7 +145,7 @@ export async function criarTelaSelecao(app) {
       card.y = cardY + 20;
 
       const fundo = new Graphics();
-      const drawCard = (hover) => {
+      const drawCard = (hover: boolean): void => {
         fundo.clear();
         // Outset card
         fundo.rect(0, 0, largCard, altCard).fill({ color: hover ? 0xe8e8e8 : W95.bg });
@@ -206,7 +213,7 @@ export async function criarTelaSelecao(app) {
       const btnX = 20;
       const btnY = altCard - 42;
       const btnBg = new Graphics();
-      const drawBtn = (pressed) => {
+      const drawBtn = (pressed: boolean): void => {
         btnBg.clear();
         btnBg.rect(btnX, btnY, btnW, btnH).fill({ color: W95.btnFace || W95.bg });
         if (pressed) {
@@ -252,14 +259,14 @@ export async function criarTelaSelecao(app) {
       card.on('pointertap', () => {
         // Close animation
         let closeAlpha = 1;
-        const closeTicker = () => {
+        const closeTicker = (): void => {
           closeAlpha -= 0.05;
           dialog.alpha = Math.max(0, closeAlpha);
           dialog.y += 2;
           if (closeAlpha <= 0) {
             app.ticker.remove(closeTicker);
             overlay.children.forEach((c) => {
-              if (c._planeta) c._planeta.stop();
+              if ((c as AnimatedCard)._planeta) (c as AnimatedCard)._planeta.stop();
             });
             planeta.stop();
             app.stage.removeChild(overlay);
@@ -277,7 +284,7 @@ export async function criarTelaSelecao(app) {
 
     // Animate dialog in
     let animTime = 0;
-    const animIn = () => {
+    const animIn = (): void => {
       animTime += 1 / 60;
 
       // Dialog fade + slide
@@ -288,14 +295,14 @@ export async function criarTelaSelecao(app) {
 
       // Staggered cards
       for (let i = 0; i < dialog.children.length; i++) {
-        const child = dialog.children[i];
+        const child = dialog.children[i] as Partial<AnimatedCard> & Container;
         if (child._animDelay !== undefined && !child._animDone) {
           const cardTime = animTime - child._animDelay;
           if (cardTime > 0) {
             const cp = Math.min(1, cardTime * 4);
             const ce = 1 - Math.pow(1 - cp, 3);
             child.alpha = ce;
-            child.y = child._baseY + 20 * (1 - ce);
+            child.y = (child._baseY ?? 0) + 20 * (1 - ce);
             if (cp >= 1) child._animDone = true;
           }
         }

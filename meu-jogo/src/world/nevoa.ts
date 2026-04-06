@@ -1,27 +1,57 @@
-// @ts-nocheck
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Text, AnimatedSprite } from 'pixi.js';
+import type { Planeta, Mundo, FonteVisao, Camera } from '../types';
 import {
   aplicarAparenciaTipoPlaneta,
   criarPlanetaSprite,
   nomeTipoPlaneta,
 } from './planeta';
 
+interface MemoriaPlanetaDados {
+  dono: string;
+  tipoPlaneta: string;
+  tamanho: number;
+  fabricas: number;
+  infraestrutura: number;
+  naves: number;
+  producao: number;
+}
+
+interface MemoriaPlanetaSnapshot {
+  x: number;
+  y: number;
+  frame: number;
+  timestamp: number;
+  dados: MemoriaPlanetaDados;
+}
+
+interface MemoriaPlaneta {
+  conhecida: boolean;
+  visual: Container;
+  fantasma: AnimatedSprite;
+  anel: Graphics;
+  infoBg: Graphics;
+  info: Text;
+  tempoLabel: Text;
+  dados: MemoriaPlanetaSnapshot | null;
+  _textoAnterior: string;
+}
+
 const ALPHA_FANTASMA = 0.32;
 const ALPHA_FANTASMA_ANEL = 0.3;
 const COR_ANEL_FANTASMA_FALLBACK = 0x556680;
 const DISTANCIA_LABEL_MEMORIA = 18;
-const DONOS_FANTASMA = {
+const DONOS_FANTASMA: Record<string, number> = {
   neutro: 0x556680,
   jogador: 0x2a6699,
 };
 
-function nomeDonoCurto(dono) {
+function nomeDonoCurto(dono: string): string {
   if (dono === 'jogador') return 'Seu';
   if (dono === 'neutro') return 'Neutro';
   return dono || '?';
 }
 
-function capturarMemoriaPlaneta(planeta) {
+function capturarMemoriaPlaneta(planeta: Planeta): MemoriaPlanetaSnapshot {
   return {
     x: planeta.x,
     y: planeta.y,
@@ -39,7 +69,7 @@ function capturarMemoriaPlaneta(planeta) {
   };
 }
 
-function dadosMudaram(anterior, atual) {
+function dadosMudaram(anterior: MemoriaPlanetaSnapshot | null, atual: MemoriaPlanetaSnapshot): boolean {
   if (!anterior) return true;
   const a = anterior.dados;
   const b = atual.dados;
@@ -55,19 +85,19 @@ function dadosMudaram(anterior, atual) {
 }
 
 /** Mapa global de memórias: planeta -> memória. Desacoplado do sprite. */
-const memorias = new WeakMap();
+const memorias: WeakMap<Planeta, MemoriaPlaneta> = new WeakMap();
 
-export function getMemoria(planeta) {
+export function getMemoria(planeta: Planeta): MemoriaPlaneta | null {
   return memorias.get(planeta) || null;
 }
 
-export function criarCamadaMemoria() {
+export function criarCamadaMemoria(): Container {
   const container = new Container();
   container.eventMode = 'none';
   return container;
 }
 
-export function criarMemoriaVisualPlaneta(mundo, planeta) {
+export function criarMemoriaVisualPlaneta(mundo: Mundo, planeta: Planeta): void {
   const container = new Container();
   container.visible = false;
   container.eventMode = 'none';
@@ -133,7 +163,7 @@ export function criarMemoriaVisualPlaneta(mundo, planeta) {
   memorias.set(planeta, memoria);
 }
 
-function redesenharVisualMemoria(memoria) {
+function redesenharVisualMemoria(memoria: MemoriaPlaneta): void {
   const { dados } = memoria;
   if (!dados) return;
 
@@ -175,7 +205,7 @@ function redesenharVisualMemoria(memoria) {
   memoria.tempoLabel.y = memoria.info.y + altura + 2;
 }
 
-export function registrarMemoriaPlaneta(planeta) {
+export function registrarMemoriaPlaneta(planeta: Planeta): void {
   const memoria = memorias.get(planeta);
   if (!memoria) return;
 
@@ -192,7 +222,7 @@ export function registrarMemoriaPlaneta(planeta) {
 
 
 
-function formatarTempoPassado(ms) {
+function formatarTempoPassado(ms: number): string {
   const seg = Math.floor(ms / 1000);
   if (seg < 60) return `~${seg}s atrás`;
   const min = Math.floor(seg / 60);
@@ -200,7 +230,7 @@ function formatarTempoPassado(ms) {
   return `~${Math.floor(min / 60)}h atrás`;
 }
 
-export function atualizarVisibilidadeMemoria(planeta, visivelAoJogador, esq, dir, cima, baixo) {
+export function atualizarVisibilidadeMemoria(planeta: Planeta, visivelAoJogador: boolean, esq: number, dir: number, cima: number, baixo: number): void {
   const memoria = memorias.get(planeta);
   if (!memoria) return;
 
@@ -226,7 +256,7 @@ export function atualizarVisibilidadeMemoria(planeta, visivelAoJogador, esq, dir
   }
 }
 
-export function atualizarEscalaLabelMemoria(planeta, zoom) {
+export function atualizarEscalaLabelMemoria(planeta: Planeta, zoom: number): void {
   const memoria = memorias.get(planeta);
   if (!memoria?.visual.visible) return;
 
@@ -237,7 +267,7 @@ export function atualizarEscalaLabelMemoria(planeta, zoom) {
   memoria.tempoLabel.scale.set(escala);
 }
 
-export function removerMemoriaPlaneta(mundo, planeta) {
+export function removerMemoriaPlaneta(mundo: Mundo, planeta: Planeta): void {
   const memoria = memorias.get(planeta);
   if (!memoria) return;
   mundo.memoriaPlanetasContainer.removeChild(memoria.visual);
@@ -251,19 +281,24 @@ import { config } from '../ui/debug';
 const FOG_MAX_W = 960;
 const FOG_MAX_H = 540;
 
-let _fogCanvas = null;
-let _fogCtx = null;
-let _fogSprite = null;
-let _fogSource = null;
-let _fogTexture = null;
-let _fogFrame = 0;
+let _fogCanvas: HTMLCanvasElement | null = null;
+let _fogCtx: CanvasRenderingContext2D | null = null;
+let _fogSprite: Sprite | null = null;
+let _fogSource: ImageSource | null = null;
+let _fogTexture: Texture | null = null;
+let _fogFrame: number = 0;
 
 /** Sub-profiling do fog */
-export const fogProfiling = { canvas: 0, upload: 0 };
-let _fogProfSoma = { canvas: 0, upload: 0 };
-let _fogProfFrames = 0;
+interface FogProfiling {
+  canvas: number;
+  upload: number;
+}
 
-export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screenH, zoom) {
+export const fogProfiling: FogProfiling = { canvas: 0, upload: 0 };
+let _fogProfSoma: FogProfiling = { canvas: 0, upload: 0 };
+let _fogProfFrames: number = 0;
+
+export function desenharNeblinaVisao(mundo: Mundo, fontesVisao: FonteVisao[], camera: Camera, screenW: number, screenH: number, zoom: number): void {
   _fogFrame++;
 
   const invZoom = 1 / (zoom || 1);
@@ -292,7 +327,7 @@ export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screen
 
   if (redesenhar) {
     const t0 = performance.now();
-    const ctx = _fogCtx;
+    const ctx = _fogCtx!;
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = `rgba(2, 5, 16, ${config.fogAlpha})`;
@@ -328,8 +363,8 @@ export function desenharNeblinaVisao(mundo, fontesVisao, camera, screenW, screen
       visao.addChild(_fogSprite);
     }
 
-    _fogSource.resource = _fogCanvas;
-    _fogSource.update();
+    _fogSource!.resource = _fogCanvas;
+    _fogSource!.update();
 
     _fogProfSoma.upload += performance.now() - t1;
     _fogProfFrames++;

@@ -1,13 +1,23 @@
-// @ts-nocheck
 import { getEstadoJogo, getPesquisaAtual, obterNaveSelecionada, profiling } from '../world/mundo';
 import { getMemoria, fogProfiling } from '../world/nevoa';
 import { getCamera } from '../core/player';
+import type { CheatsState, DebugConfig, Mundo, Application } from '../types';
+
+type LinhaEntry = { label: HTMLElement; value: HTMLElement; row: HTMLElement };
+type LinhasMap = Record<string, LinhaEntry | HTMLElement>;
+
+interface DebugPopup extends HTMLDivElement {
+  _linhas: LinhasMap;
+  _panels: Record<string, HTMLDivElement>;
+  _fpsCanvas: HTMLCanvasElement;
+  _profCanvas: HTMLCanvasElement;
+}
 
 const THROTTLE_MS = 150;
 const FPS_HISTORY = 120; // ~20s a 6 updates/s
 const PROF_HISTORY = 60;
 
-export const cheats = {
+export const cheats: CheatsState = {
   construcaoInstantanea: false,
   recursosInfinitos: false,
   pesquisaInstantanea: false,
@@ -16,7 +26,7 @@ export const cheats = {
 };
 
 /** Configuracoes ajustaveis em tempo real */
-export const config = {
+export const config: DebugConfig = {
   raioVisaoBase: 900,
   raioVisaoNave: 600,
   raioVisaoBatedora: 1100,
@@ -24,31 +34,31 @@ export const config = {
   fogThrottle: 3,
 };
 
-export function getRendererPreference() {
+export function getRendererPreference(): string {
   return localStorage.getItem('renderer') || 'webgl';
 }
-export function setRendererPreference(val) {
+export function setRendererPreference(val: string): void {
   localStorage.setItem('renderer', val);
 }
 
 // === Historico para graficos ===
-const _fpsHist = [];
-const _profHist = { logica: [], fundo: [], fog: [], planetas: [], render: [] };
+const _fpsHist: number[] = [];
+const _profHist: Record<string, number[]> = { logica: [], fundo: [], fog: [], planetas: [], render: [] };
 
-function pushHist(arr, val, max) {
+function pushHist(arr: number[], val: number, max: number): void {
   arr.push(val);
   if (arr.length > max) arr.shift();
 }
 
 // === Utilidades DOM ===
-function el(tag, css, text) {
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, css?: Partial<CSSStyleDeclaration>, text?: string): HTMLElementTagNameMap[K] {
   const d = document.createElement(tag);
   if (css) Object.assign(d.style, css);
   if (text) d.textContent = text;
   return d;
 }
 
-function secTitle(text) {
+function secTitle(text: string): HTMLDivElement {
   return el('div', {
     color: '#4a90cc', fontSize: '10px', letterSpacing: '1.5px',
     borderBottom: '1px solid rgba(40,70,120,0.5)', paddingBottom: '4px',
@@ -56,7 +66,7 @@ function secTitle(text) {
   }, text);
 }
 
-function dataRow(parent, id, linhas) {
+function dataRow(parent: HTMLElement, id: string, linhas: LinhasMap): void {
   const row = el('div', {
     display: 'flex', justifyContent: 'space-between', padding: '2px 0',
     fontSize: '11px', borderBottom: '1px solid rgba(20,40,60,0.3)',
@@ -69,7 +79,7 @@ function dataRow(parent, id, linhas) {
   linhas[id] = { label, value, row };
 }
 
-function criarSlider(parent, label, min, max, step, valor, configKey) {
+function criarSlider(parent: HTMLElement, label: string, min: number, max: number, step: number, valor: number, configKey: keyof DebugConfig): void {
   const wrap = el('div', { marginBottom: '8px' });
   const header = el('div', {
     display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '2px',
@@ -81,10 +91,10 @@ function criarSlider(parent, label, min, max, step, valor, configKey) {
 
   const slider = document.createElement('input');
   slider.type = 'range';
-  slider.min = min;
-  slider.max = max;
-  slider.step = step;
-  slider.value = valor;
+  slider.min = String(min);
+  slider.max = String(max);
+  slider.step = String(step);
+  slider.value = String(valor);
   Object.assign(slider.style, {
     width: '100%', accentColor: '#4a90cc', height: '4px', cursor: 'pointer',
   });
@@ -97,7 +107,7 @@ function criarSlider(parent, label, min, max, step, valor, configKey) {
   parent.appendChild(wrap);
 }
 
-function criarCheat(parent, elId, label, cheatKey, hotkey) {
+function criarCheat(parent: HTMLElement, elId: string, label: string, cheatKey: keyof CheatsState, hotkey: string): void {
   const lbl = el('label', {
     display: 'flex', alignItems: 'center', padding: '5px 8px',
     cursor: 'pointer', color: '#a0d8b0', fontSize: '11px', gap: '8px',
@@ -118,7 +128,7 @@ function criarCheat(parent, elId, label, cheatKey, hotkey) {
 }
 
 // === Canvas para grafico de FPS ===
-function criarGraficoCanvas(w, h) {
+function criarGraficoCanvas(w: number, h: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -126,8 +136,8 @@ function criarGraficoCanvas(w, h) {
   return canvas;
 }
 
-function desenharGraficoFps(canvas, hist) {
-  const ctx = canvas.getContext('2d');
+function desenharGraficoFps(canvas: HTMLCanvasElement, hist: number[]): void {
+  const ctx = canvas.getContext('2d')!;
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
@@ -173,8 +183,8 @@ function desenharGraficoFps(canvas, hist) {
   ctx.fill();
 }
 
-function desenharGraficoProf(canvas, hist) {
-  const ctx = canvas.getContext('2d');
+function desenharGraficoProf(canvas: HTMLCanvasElement, hist: Record<string, number[]>): void {
+  const ctx = canvas.getContext('2d')!;
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
@@ -196,7 +206,7 @@ function desenharGraficoProf(canvas, hist) {
     ctx.fillText(`${ms}ms`, 2, y - 2);
   }
 
-  const cores = { logica: '#4488cc', fundo: '#44aa88', fog: '#ff6060', planetas: '#ffcc40', render: '#aa66ff' };
+  const cores: Record<string, string> = { logica: '#4488cc', fundo: '#44aa88', fog: '#ff6060', planetas: '#ffcc40', render: '#aa66ff' };
   const step = w / (PROF_HISTORY - 1);
 
   // Stacked area
@@ -223,9 +233,9 @@ function desenharGraficoProf(canvas, hist) {
 }
 
 // === Popup principal ===
-const BAR_CORES = { logica: '#4488cc', fundo: '#44aa88', fog: '#ff6060', planetas: '#ffcc40', render: '#aa66ff' };
+const BAR_CORES: Record<string, string> = { logica: '#4488cc', fundo: '#44aa88', fog: '#ff6060', planetas: '#ffcc40', render: '#aa66ff' };
 
-function criarPopupHTML() {
+function criarPopupHTML(): DebugPopup {
   const overlay = el('div', {
     display: 'none', position: 'fixed', inset: '0',
     background: 'rgba(2, 4, 10, 0.95)', zIndex: '9999',
@@ -263,8 +273,8 @@ function criarPopupHTML() {
   });
   container.appendChild(tabBar);
 
-  const panels = {};
-  const tabs = [
+  const panels: Record<string, HTMLDivElement> = {};
+  const tabs: [string, string][] = [
     ['status', 'Status'],
     ['profiling', 'Profiling'],
     ['controls', 'Controles'],
@@ -280,14 +290,14 @@ function criarPopupHTML() {
     }, label);
     tab.addEventListener('click', () => {
       activeTab = id;
-      for (const [tid, tl] of tabs) {
-        const te = tabBar.children[tabs.indexOf([tid, tl])];
+      for (const [tid] of tabs) {
+        const te = tabBar.children[tabs.findIndex(t => t[0] === tid)] as HTMLElement | undefined;
         if (!te) continue;
         te.style.color = tid === id ? '#60ccff' : '#556';
         te.style.borderBottomColor = tid === id ? '#60ccff' : 'transparent';
       }
       // simpler approach
-      for (const t of tabBar.children) {
+      for (const t of Array.from(tabBar.children) as HTMLElement[]) {
         t.style.color = '#556';
         t.style.borderBottomColor = 'transparent';
       }
@@ -304,7 +314,7 @@ function criarPopupHTML() {
     tabBar.appendChild(tab);
   }
 
-  const linhas = {};
+  const linhas: LinhasMap = {};
 
   // ==================== TAB: STATUS ====================
   const statusPanel = el('div');
@@ -383,7 +393,7 @@ function criarPopupHTML() {
   profGrid.appendChild(pLeft);
   pLeft.appendChild(secTitle('TEMPOS (ms/frame)'));
 
-  const profIds = [
+  const profIds: [string, string, boolean][] = [
     ['dbg-prof-logica', 'Logica', false],
     ['dbg-prof-fundo', 'Fundo', false],
     ['dbg-prof-fog', 'Fog', false],
@@ -519,27 +529,28 @@ function criarPopupHTML() {
   }
 
   document.body.appendChild(overlay);
-  overlay._linhas = linhas;
-  overlay._panels = panels;
-  overlay._fpsCanvas = fpsCanvas;
-  overlay._profCanvas = profCanvas;
-  return overlay;
+  const popup = overlay as unknown as DebugPopup;
+  popup._linhas = linhas;
+  popup._panels = panels;
+  popup._fpsCanvas = fpsCanvas;
+  popup._profCanvas = profCanvas;
+  return popup;
 }
 
-let _popup = null;
+let _popup: DebugPopup | null = null;
 let _ultimaAtualizacao = 0;
 
-export function criarDebug() {
+export function criarDebug(): DebugPopup {
   _popup = criarPopupHTML();
   return _popup;
 }
 
-export function toggleDebug() {
+export function toggleDebug(): void {
   if (!_popup) return;
   _popup.style.display = _popup.style.display === 'none' ? 'block' : 'none';
 }
 
-export function processarTeclaDebug(ev) {
+export function processarTeclaDebug(ev: KeyboardEvent): void {
   if (ev.code === 'F3' || (ev.code === 'Escape' && _popup?.style.display !== 'none')) {
     ev.preventDefault();
     toggleDebug();
@@ -547,7 +558,7 @@ export function processarTeclaDebug(ev) {
   }
   if (!_popup || _popup.style.display === 'none') return;
 
-  const cheatKeys = {
+  const cheatKeys: Record<string, [keyof CheatsState, string]> = {
     'Digit1': ['construcaoInstantanea', 'cheat-construcao'],
     'Digit2': ['recursosInfinitos', 'cheat-recursos'],
     'Digit3': ['pesquisaInstantanea', 'cheat-pesquisa'],
@@ -557,13 +568,13 @@ export function processarTeclaDebug(ev) {
   const ck = cheatKeys[ev.code];
   if (ck) {
     cheats[ck[0]] = !cheats[ck[0]];
-    const cb = _popup.querySelector(`#${ck[1]}`);
+    const cb = _popup.querySelector(`#${ck[1]}`) as HTMLInputElement | null;
     if (cb) cb.checked = cheats[ck[0]];
   }
 }
 
-function setData(id, label, value, color) {
-  const entry = _popup._linhas[id];
+function setData(id: string, label: string, value: string, color?: string): void {
+  const entry = _popup!._linhas[id] as LinhaEntry | undefined;
   if (!entry) return;
   if (entry.label) entry.label.textContent = label;
   if (entry.value) {
@@ -572,43 +583,43 @@ function setData(id, label, value, color) {
   }
 }
 
-function setProf(id, value) {
-  const entry = _popup._linhas[id];
+function setProf(id: string, value: number): void {
+  const entry = _popup!._linhas[id] as LinhaEntry | undefined;
   if (!entry) return;
   entry.value.textContent = value.toFixed(2);
   entry.value.style.color = corProf(value);
 }
 
-function corProf(v) {
+function corProf(v: number): string {
   if (v > 5) return '#ff5050';
   if (v > 2) return '#ffcc40';
   return '#60ff90';
 }
 
-function corFps(fps) {
+function corFps(fps: number): string {
   if (fps >= 50) return '#60ff90';
   if (fps >= 30) return '#ffcc40';
   return '#ff5050';
 }
 
-function formatarTempo(ms) {
+function formatarTempo(ms: number): string {
   if (!ms || ms <= 0) return '0s';
   const s = Math.ceil(ms / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-function atualizarBarra() {
-  const bar = _popup._linhas['dbg-bar'];
-  const legend = _popup._linhas['dbg-bar-legend'];
-  if (!bar) return;
+function atualizarBarra(): void {
+  const bar = _popup!._linhas['dbg-bar'] as HTMLElement | undefined;
+  const legend = _popup!._linhas['dbg-bar-legend'] as HTMLElement | undefined;
+  if (!bar || !legend) return;
 
   const total = Math.max(profiling.total, 0.01);
   while (bar.firstChild) bar.removeChild(bar.firstChild);
   while (legend.firstChild) legend.removeChild(legend.firstChild);
 
   for (const [key, cor] of Object.entries(BAR_CORES)) {
-    const val = profiling[key] || 0;
+    const val = (profiling as unknown as Record<string, number>)[key] || 0;
     const pct = Math.max((val / total) * 100, 0.5);
     const seg = el('div', {
       width: `${pct}%`, background: cor, height: '100%',
@@ -624,7 +635,7 @@ function atualizarBarra() {
   }
 }
 
-export function atualizarDebug(debug, mundo, app) {
+export function atualizarDebug(debug: DebugPopup, mundo: Mundo, app: Application): void {
   if (!_popup || _popup.style.display === 'none') return;
 
   const agora = performance.now();
@@ -638,15 +649,16 @@ export function atualizarDebug(debug, mundo, app) {
   // History
   pushHist(_fpsHist, fps, FPS_HISTORY);
   for (const k of Object.keys(_profHist)) {
-    pushHist(_profHist[k], profiling[k] || 0, PROF_HISTORY);
+    pushHist(_profHist[k], (profiling as unknown as Record<string, number>)[k] || 0, PROF_HISTORY);
   }
 
-  const rendererType = app.renderer?.name || app.renderer?.constructor?.name || '?';
+  const rendererObj = app.renderer as { name?: string } | undefined;
+  const rendererType = rendererObj?.name || rendererObj?.constructor?.name || '?';
 
   // FPS big card
-  const fpsBig = _popup.querySelector('#dbg-fps-big');
+  const fpsBig = _popup.querySelector('#dbg-fps-big') as HTMLElement | null;
   if (fpsBig) {
-    fpsBig.textContent = fps;
+    fpsBig.textContent = String(fps);
     fpsBig.style.color = corFps(fps);
   }
   const fpsSub = _popup.querySelector('#dbg-fps-sub');
