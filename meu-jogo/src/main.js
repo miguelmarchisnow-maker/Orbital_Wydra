@@ -5,6 +5,7 @@ import { criarMinimapa, atualizarMinimapa, onMinimapClick } from './ui/minimapa.
 import { criarPainel, atualizarPainel, definirAcaoPainel } from './ui/painel.js';
 import { getTipos } from './ui/selecao.js';
 import { criarTutorial, atualizarTutorial } from './ui/tutorial.js';
+import { criarDebug, atualizarDebug, toggleDebug } from './ui/debug.js';
 import { somVitoria, somDerrota } from './audio/som.js';
 
 const app = new Application();
@@ -53,6 +54,16 @@ definirAcaoPainel(painel, (acao, planeta) => {
 const tutorial = criarTutorial(app);
 app.stage.addChild(tutorial);
 
+const debug = criarDebug();
+app.stage.addChild(debug);
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F3') {
+    e.preventDefault();
+    toggleDebug(debug);
+  }
+});
+
 app.ticker.add(() => {
   const camera = getCamera();
   atualizarCamera(mundo, app);
@@ -60,6 +71,7 @@ app.ticker.add(() => {
   atualizarMinimapa(minimapa, camera, app);
   atualizarPainel(painel, mundo, tipoEscolhido, app);
   atualizarTutorial(tutorial, mundo);
+  atualizarDebug(debug, mundo, app);
 
   const estado = getEstadoJogo();
   if (estado === 'vitoria' && !app._fimTocado) {
