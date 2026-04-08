@@ -1,7 +1,7 @@
 import { Application } from 'pixi.js';
 import type { Mundo } from './types';
 import { criarMundo, atualizarMundo, getEstadoJogo, construirNoPlaneta } from './world/mundo';
-import { configurarCamera, atualizarCamera, getCamera, iniciarComandoNave, setCameraPos, setTipoJogador } from './core/player';
+import { cancelarRotaNaveSelecionada, configurarCamera, atualizarCamera, getCamera, iniciarComandoNave, setCameraPos, setTipoJogador } from './core/player';
 import { criarMinimapa, atualizarMinimapa, onMinimapClick } from './ui/minimapa';
 import { criarPainel, atualizarPainel, definirAcaoPainel, definirAcaoNavePainel } from './ui/painel';
 import { getTipos } from './ui/selecao';
@@ -54,6 +54,7 @@ definirAcaoPainel(painel, (acao: string, planeta: any) => {
 });
 definirAcaoNavePainel(painel, (acao: string, nave: any) => {
   if (acao === 'comando_nave_mover') iniciarComandoNave('mover', nave);
+  else if (acao === 'comando_nave_cancelar') cancelarRotaNaveSelecionada(mundo);
   else if (acao === 'comando_nave_origem') iniciarComandoNave('origem', nave);
   else if (acao === 'comando_nave_destino') iniciarComandoNave('destino', nave);
   else if (acao === 'comando_nave_loop') alternarLoopCargueira(nave);

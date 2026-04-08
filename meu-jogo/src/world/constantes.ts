@@ -18,8 +18,8 @@ export const TEMPO_BASE_COLONIZADORA_MS = 60 * 1000;
 export const CUSTO_NAVE_COMUM = 20;
 export const CUSTO_PESQUISA_RARO = 5;
 export const TEMPO_PESQUISA_MS = 60 * 1000;
-export const VELOCIDADE_NAVE = 0.28;
-export const VELOCIDADE_ORBITA_NAVE = 0.0018;
+export const VELOCIDADE_NAVE = 0.045;
+export const VELOCIDADE_ORBITA_NAVE = 0.00055;
 export const CATEGORIAS_PESQUISA = ['torreta', 'cargueira', 'batedora'];
 
 export function formatarId(prefixo: string): string {

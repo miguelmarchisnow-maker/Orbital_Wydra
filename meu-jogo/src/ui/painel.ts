@@ -18,7 +18,7 @@ import {
 } from '../world/mundo';
 import { marcarInteracaoUi } from './interacao-ui';
 import { CUSTO_NAVE_COMUM, CUSTO_PESQUISA_RARO } from '../world/constantes';
-import { getTextoComandoNave } from '../core/player';
+import { getComandoNaveAtual, getTextoComandoNave } from '../core/player';
 
 const SP = {
   panelBg: 0x101830,
@@ -123,6 +123,7 @@ export interface PainelContainer extends Container {
   _btnNaves: BotaoContainer[];
   _btnPesquisa: PesquisaBotao[];
   _btnMoverNave: BotaoContainer;
+  _btnCancelarMoverNave: BotaoContainer;
   _btnOrigemCarga: BotaoContainer;
   _btnDestinoCarga: BotaoContainer;
   _btnLoopCarga: BotaoContainer;
@@ -379,6 +380,7 @@ export function criarPainel(): PainelContainer {
   infoContainer.addChild(overlayPesquisa);
 
   const btnMoverNave = criarBotaoAcao(infoContainer, 'Mover', 'comando_nave_mover');
+  const btnCancelarMoverNave = criarBotaoAcao(infoContainer, 'Cancelar', 'comando_nave_cancelar');
   const btnOrigemCarga = criarBotaoAcao(infoContainer, 'Origem', 'comando_nave_origem');
   const btnDestinoCarga = criarBotaoAcao(infoContainer, 'Destino', 'comando_nave_destino');
   const btnLoopCarga = criarBotaoAcao(infoContainer, 'Loop', 'comando_nave_loop');
@@ -454,6 +456,7 @@ export function criarPainel(): PainelContainer {
   container._btnNaves = btnNaves;
   container._btnPesquisa = btnPesquisa;
   container._btnMoverNave = btnMoverNave;
+  container._btnCancelarMoverNave = btnCancelarMoverNave;
   container._btnOrigemCarga = btnOrigemCarga;
   container._btnDestinoCarga = btnDestinoCarga;
   container._btnLoopCarga = btnLoopCarga;
@@ -591,7 +594,7 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
   for (const b of painel._btnNaves) b.visible = false;
   for (const { botao } of painel._btnPesquisa) botao.visible = false;
   for (const cat in painel._catLabels) painel._catLabels[cat].visible = false;
-  for (const b of [painel._btnMoverNave, painel._btnOrigemCarga, painel._btnDestinoCarga, painel._btnLoopCarga]) b.visible = false;
+  for (const b of [painel._btnMoverNave, painel._btnCancelarMoverNave, painel._btnOrigemCarga, painel._btnDestinoCarga, painel._btnLoopCarga]) b.visible = false;
   for (const ajuste of painel._btnAjusteCarga) ajuste.botao.visible = false;
   painel._txtCargaInfo.visible = false;
 
@@ -599,6 +602,10 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
     painel._naveSelecionada = naveSelecionada;
     painel._planetaSelecionado = null;
     info.visible = true;
+    const comandoAtual = getComandoNaveAtual();
+    const planejandoMovimento = comandoAtual?.tipo === 'mover' && comandoAtual.nave === naveSelecionada;
+    const qtdPontosPlanejados = planejandoMovimento ? comandoAtual.pontos.length : 0;
+    const temRotaManual = naveSelecionada.estado === 'viajando' || naveSelecionada.rotaManual.length > 0 || naveSelecionada.alvo?._tipoAlvo === 'ponto';
 
     const tipoNome = naveSelecionada.tipo === 'colonizadora'
       ? 'Colonizadora'
@@ -608,6 +615,7 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
       { key: 'tipo', label: 'Estado', value: naveSelecionada.estado, color: SP.textValue },
       { key: 'ciclo', label: 'Posicao', value: `${Math.floor(naveSelecionada.x)} / ${Math.floor(naveSelecionada.y)}`, color: SP.statAmber },
       { key: 'prod', label: 'Carga', value: `C:${naveSelecionada.carga.comum} R:${naveSelecionada.carga.raro} F:${naveSelecionada.carga.combustivel}`, color: SP.statGreen },
+      { key: 'pesquisa', label: 'Rota', value: planejandoMovimento ? `planejando ${qtdPontosPlanejados}/5 pontos` : (temRotaManual ? `${(naveSelecionada.alvo?._tipoAlvo === 'ponto' ? 1 : 0) + naveSelecionada.rotaManual.length} pontos restantes` : 'sem rota manual'), color: SP.textValue },
     ];
     if (naveSelecionada.tipo === 'cargueira') {
       rows.push({ key: 'fabrica', label: 'Capacidade', value: `${capacidadeCargaCargueira(naveSelecionada.tier)}`, color: SP.textValue });
@@ -641,7 +649,10 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
     }
 
     const fieldH = rows.length * lineH + fieldPad * 2;
-    const W = Math.max(330, maxRowW + fieldX * 2 + fieldPad * 2 + 20);
+    const minW = naveSelecionada.tipo === 'cargueira'
+      ? (temRotaManual ? 414 : 316)
+      : (temRotaManual ? 218 : 120);
+    const W = Math.max(330, minW + 24, maxRowW + fieldX * 2 + fieldPad * 2 + 20);
     const extraH = naveSelecionada.tipo === 'cargueira' ? 150 : 52;
     const H = fieldY + fieldH + extraH;
     bg.clear();
@@ -660,17 +671,28 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
     painel._btnMoverNave.visible = true;
     painel._btnMoverNave.x = 12;
     painel._btnMoverNave.y = cmdY;
-    painel._btnMoverNave._texto.text = 'Mover';
+    painel._btnMoverNave._texto.text = planejandoMovimento ? `Iniciar ${qtdPontosPlanejados}/5` : 'Mover';
     painel._btnMoverNave._texto.x = cmdW / 2;
     painel._btnMoverNave._texto.y = BTN_H / 2;
     drawBtn(painel._btnMoverNave._bg, 0, 0, cmdW, BTN_H, false, true, false);
     painel._btnMoverNave._texto.style.fill = SP.btnActionText;
 
+    painel._btnCancelarMoverNave.visible = temRotaManual;
+    if (temRotaManual) {
+      painel._btnCancelarMoverNave.x = 110;
+      painel._btnCancelarMoverNave.y = cmdY;
+      painel._btnCancelarMoverNave._texto.text = 'Cancelar';
+      painel._btnCancelarMoverNave._texto.x = cmdW / 2;
+      painel._btnCancelarMoverNave._texto.y = BTN_H / 2;
+      drawBtn(painel._btnCancelarMoverNave._bg, 0, 0, cmdW, BTN_H, false, false, false);
+      painel._btnCancelarMoverNave._texto.style.fill = SP.btnText;
+    }
+
     if (naveSelecionada.tipo === 'cargueira') {
       painel._btnOrigemCarga.visible = true;
       painel._btnDestinoCarga.visible = true;
       painel._btnLoopCarga.visible = true;
-      painel._btnOrigemCarga.x = 110;
+      painel._btnOrigemCarga.x = temRotaManual ? 208 : 110;
       painel._btnOrigemCarga.y = cmdY;
       painel._btnOrigemCarga._texto.text = 'Origem';
       painel._btnOrigemCarga._texto.x = cmdW / 2;
@@ -678,7 +700,7 @@ export function atualizarPainel(painel: PainelContainer, mundo: Mundo, tipoJogad
       drawBtn(painel._btnOrigemCarga._bg, 0, 0, cmdW, BTN_H, false, true, false);
       painel._btnOrigemCarga._texto.style.fill = SP.btnActionText;
 
-      painel._btnDestinoCarga.x = 208;
+      painel._btnDestinoCarga.x = temRotaManual ? 306 : 208;
       painel._btnDestinoCarga.y = cmdY;
       painel._btnDestinoCarga._texto.text = 'Destino';
       painel._btnDestinoCarga._texto.x = cmdW / 2;

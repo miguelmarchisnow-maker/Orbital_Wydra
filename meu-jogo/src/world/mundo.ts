@@ -15,7 +15,7 @@ import { profileMark, profileAcumular, profileFlush } from './profiling';
 export { profiling } from './profiling';
 export { construirNoPlaneta } from './construcao';
 export { calcularCustoTier, calcularTempoConstrucaoMs, calcularTempoColonizadoraMs, calcularTempoCicloPlaneta, calcularTempoRestantePlaneta, getTierMax, textoProducaoCicloPlaneta } from './recursos';
-export { encontrarNaveNoPonto, obterNaveSelecionada, selecionarNave, enviarNaveParaAlvo, enviarNaveParaPosicao, parseAcaoNave, capacidadeCargaCargueira, ajustarConfiguracaoCarga, definirPlanetaRotaCargueira, alternarLoopCargueira } from './naves';
+export { encontrarNaveNoPonto, obterNaveSelecionada, selecionarNave, enviarNaveParaAlvo, enviarNaveParaPosicao, definirRotaManualNave, cancelarMovimentoNave, parseAcaoNave, capacidadeCargaCargueira, ajustarConfiguracaoCarga, definirPlanetaRotaCargueira, alternarLoopCargueira } from './naves';
 export { iniciarPesquisa, pesquisaTierLiberada, pesquisaTierDisponivel, getPesquisaAtual } from './pesquisa';
 export { nomeTipoPlaneta } from './planeta';
 
@@ -86,6 +86,7 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
   const frotas: unknown[] = [];
   const frotasContainer = new Container();
   const navesContainer = new Container();
+  const rotasContainer = new Container();
   const visaoContainer = new Container();
   const orbitasContainer = new Container();
   const memoriaPlanetasContainer = criarCamadaMemoria();
@@ -119,6 +120,7 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
   }
 
   container.addChild(visaoContainer);
+  container.addChild(rotasContainer);
   container.addChild(orbitasContainer);
   container.addChild(memoriaPlanetasContainer);
 
@@ -130,7 +132,7 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
 
   const mundo = {
     container, tamanho, planetas, sistemas, sois,
-    naves: [] as Nave[], fundo, frotas, frotasContainer, navesContainer,
+    naves: [] as Nave[], fundo, frotas, frotasContainer, navesContainer, rotasContainer,
     planetaSheet, tipoJogador,
     ultimoTickMs: performance.now(),
     visaoContainer, orbitasContainer, memoriaPlanetasContainer,

@@ -5,6 +5,10 @@ import { cheats } from '../ui/debug';
 import { notifColonizacao, mostrarNotificacao } from '../ui/notificacao';
 import { somConquista } from '../audio/som';
 
+const COR_ROTA_NAVE = 0x27465f;
+const COR_PONTO_ROTA_NAVE = 0x3d6888;
+const ALPHA_ROTA_NAVE = 0.85;
+
 function criarCargaVazia(): Recursos {
   return { comum: 0, raro: 0, combustivel: 0 };
 }
@@ -127,6 +131,26 @@ function desenharNaveGfx(nave: Nave): void {
   g.circle(0, 0, 14).stroke({ color: 0x44aaff, width: 1.2, alpha: sel });
 }
 
+function desenharRotaNave(nave: Nave): void {
+  const g = nave.rotaGfx;
+  g.clear();
+  const pontos: AlvoPonto[] = [];
+  if (nave.alvo?._tipoAlvo === 'ponto') pontos.push(nave.alvo);
+  if (nave.rotaManual.length > 0) pontos.push(...nave.rotaManual);
+  if (pontos.length <= 0) return;
+
+  g.moveTo(nave.x, nave.y);
+  for (const ponto of pontos) {
+    g.lineTo(ponto.x, ponto.y);
+  }
+  g.stroke({ color: COR_ROTA_NAVE, width: 1.2, alpha: ALPHA_ROTA_NAVE });
+
+  for (const ponto of pontos) {
+    g.circle(ponto.x, ponto.y, 3.5).fill({ color: 0x08111a, alpha: 0.96 });
+    g.circle(ponto.x, ponto.y, 3.5).stroke({ color: COR_PONTO_ROTA_NAVE, width: 1.1, alpha: 0.92 });
+  }
+}
+
 export function atualizarSelecaoNave(nave: Nave): void {
   desenharNaveGfx(nave);
 }
@@ -161,12 +185,16 @@ export function criarNave(mundo: Mundo, planetaOrigem: Planeta, tipo: string, ti
     origem: planetaOrigem,
     carga: criarCargaVazia(),
     configuracaoCarga: criarCargaVazia(),
+    rotaManual: [],
     rotaCargueira: null,
     gfx: new Graphics(),
+    rotaGfx: new Graphics(),
     _tipoAlvo: 'nave',
     orbita: null,
   };
   atualizarSelecaoNave(nave);
+  nave.rotaGfx.eventMode = 'none';
+  mundo.rotasContainer.addChild(nave.rotaGfx);
   mundo.navesContainer.addChild(nave.gfx);
   mundo.naves.push(nave);
   entrarEmOrbita(nave, planetaOrigem);
@@ -179,6 +207,7 @@ export function removerNave(mundo: Mundo, nave: Nave): void {
   }
   const idx = mundo.naves.indexOf(nave);
   if (idx >= 0) mundo.naves.splice(idx, 1);
+  if (nave.rotaGfx) mundo.rotasContainer.removeChild(nave.rotaGfx);
   if (nave.gfx) mundo.navesContainer.removeChild(nave.gfx);
 }
 
@@ -193,6 +222,7 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
       const stopDist = obterRaioAlvo(alvo);
       const velReal = VELOCIDADE_NAVE * (cheats.velocidadeNave ? 10 : 1);
       if (dist <= stopDist + velReal * deltaMs) {
+        const proximoPontoManual = alvo._tipoAlvo === 'ponto' ? nave.rotaManual.shift() ?? null : null;
         if (nave.tipo === 'colonizadora' && alvo._tipoAlvo === 'planeta' && alvo.dados.dono === 'neutro') {
           finalizarColonizacao(mundo, nave, alvo);
           continue;
@@ -205,7 +235,13 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
         }
         if (alvo._tipoAlvo === 'ponto') {
           nave.x = alvo.x; nave.y = alvo.y;
-          nave.estado = 'parado'; nave.alvo = null; nave.orbita = null;
+          if (proximoPontoManual) {
+            nave.estado = 'viajando';
+            nave.alvo = proximoPontoManual;
+            nave.orbita = null;
+          } else {
+            nave.estado = 'parado'; nave.alvo = null; nave.orbita = null;
+          }
         } else {
           entrarEmOrbita(nave, alvo);
         }
@@ -220,6 +256,7 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
       nave.y = nave.alvo.y + Math.sin(nave.orbita.angulo) * nave.orbita.raio;
     }
     processarLoopCargueira(nave);
+    desenharRotaNave(nave);
     nave.gfx.x = nave.x;
     nave.gfx.y = nave.y;
   }
@@ -257,6 +294,7 @@ export function selecionarNave(mundo: Mundo, nave: Nave | null): void {
 
 export function enviarNaveParaAlvo(mundo: Mundo, nave: Nave, alvo: Planeta | Sol | AlvoPonto): boolean {
   if (!nave || !alvo) return false;
+  nave.rotaManual = [];
   nave.estado = 'viajando';
   nave.alvo = alvo;
   nave.orbita = null;
@@ -265,10 +303,27 @@ export function enviarNaveParaAlvo(mundo: Mundo, nave: Nave, alvo: Planeta | Sol
 
 export function enviarNaveParaPosicao(mundo: Mundo, nave: Nave, wx: number, wy: number): boolean {
   if (!nave || nave.dono !== 'jogador') return false;
+  nave.rotaManual = [];
   nave.estado = 'viajando';
   nave.alvo = { _tipoAlvo: 'ponto', x: wx, y: wy };
   nave.orbita = null;
   return true;
+}
+
+export function definirRotaManualNave(nave: Nave, pontos: AlvoPonto[]): boolean {
+  if (!nave || nave.dono !== 'jogador' || pontos.length <= 0) return false;
+  nave.rotaManual = pontos.map((p) => ({ _tipoAlvo: 'ponto', x: p.x, y: p.y }));
+  nave.estado = 'viajando';
+  nave.alvo = nave.rotaManual.shift() ?? null;
+  nave.orbita = null;
+  return !!nave.alvo;
+}
+
+export function cancelarMovimentoNave(nave: Nave): void {
+  nave.rotaManual = [];
+  nave.estado = 'parado';
+  nave.alvo = null;
+  nave.orbita = null;
 }
 
 export function parseAcaoNave(acao: string): AcaoNaveParsed | null {

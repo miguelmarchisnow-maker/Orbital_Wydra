@@ -107,6 +107,7 @@ export interface Nave {
   origem: Planeta;
   carga: Recursos;
   configuracaoCarga: Recursos;
+  rotaManual: AlvoPonto[];
   rotaCargueira: {
     origem: Planeta | null;
     destino: Planeta | null;
@@ -114,6 +115,7 @@ export interface Nave {
     fase: 'origem' | 'destino';
   } | null;
   gfx: Graphics;
+  rotaGfx: Graphics;
   _tipoAlvo: 'nave';
   orbita: OrbitaNave | null;
   _selecaoAnterior?: boolean;
@@ -159,6 +161,7 @@ export interface Mundo {
   frotas: unknown[];
   frotasContainer: Container;
   navesContainer: Container;
+  rotasContainer: Container;
   planetaSheet: TexturasPlaneta;
   tipoJogador: TipoJogador;
   ultimoTickMs: number;
