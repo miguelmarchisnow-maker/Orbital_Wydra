@@ -192,7 +192,6 @@ function criarShaderPlaneta(tipoPlaneta: string, seed: number): Shader {
 
   return Shader.from({
     gl: { vertex: vertexSrc, fragment: fragmentSrc },
-    gpu: { vertex: { entryPoint: 'mainVertex', source: wgslSrc }, fragment: { entryPoint: 'mainFragment', source: wgslSrc } },
     resources: {
       planetUniforms: {
         uPixels: { value: 64.0, type: 'f32' },
@@ -315,7 +314,6 @@ export function criarEstrelaProcedural(
   const c = paleta.colors;
   const shader = Shader.from({
     gl: { vertex: vertexSrc, fragment: fragmentSrc },
-    gpu: { vertex: { entryPoint: 'mainVertex', source: wgslSrc }, fragment: { entryPoint: 'mainFragment', source: wgslSrc } },
     resources: {
       planetUniforms: {
         uPixels: { value: 128.0, type: 'f32' },

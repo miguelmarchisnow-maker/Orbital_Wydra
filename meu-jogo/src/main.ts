@@ -18,7 +18,7 @@ await app.init({
   resolution: window.devicePixelRatio || 1,
   autoDensity: true,
   antialias: true,
-  preference: getRendererPreference() as 'webgl' | 'webgpu',
+  preference: 'webgl', // WebGPU não suportado ainda com shaders customizados
 });
 
 document.body.style.margin = '0';
