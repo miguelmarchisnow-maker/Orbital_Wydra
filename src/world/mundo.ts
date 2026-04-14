@@ -7,7 +7,7 @@ import { atualizarTempoPlanetas, atualizarLuzPlaneta } from './planeta-procedura
 import { criarCamadaMemoria, criarMemoriaVisualPlaneta, registrarMemoriaPlaneta, atualizarVisibilidadeMemoria, atualizarEscalaLabelMemoria } from './nevoa';
 import { criarSistemaSolar } from './sistema';
 import { resetarNomesPlanetas } from './nomes';
-import { atualizarNaves, atualizarSelecaoNave } from './naves';
+import { atualizarNaves, atualizarSelecaoNave, carregarSpritesheetNaves } from './naves';
 import { atualizarPesquisaPlaneta } from './pesquisa';
 import { atualizarCampoDeVisao } from './visao';
 import { atualizarFilasPlaneta, desenharConstrucoesPlaneta } from './construcao';
@@ -17,7 +17,7 @@ import { profileMark, profileAcumular, profileFlush } from './profiling';
 export { profiling } from './profiling';
 export { construirNoPlaneta } from './construcao';
 export { calcularCustoTier, calcularTempoConstrucaoMs, calcularTempoColonizadoraMs, calcularTempoCicloPlaneta, calcularTempoRestantePlaneta, getTierMax, textoProducaoCicloPlaneta, obterProducaoNaturalCiclo } from './recursos';
-export { encontrarNaveNoPonto, obterNaveSelecionada, selecionarNave, enviarNaveParaAlvo, enviarNaveParaPosicao, definirRotaManualNave, cancelarMovimentoNave, parseAcaoNave, capacidadeCargaCargueira, ajustarConfiguracaoCarga, definirPlanetaRotaCargueira, alternarLoopCargueira } from './naves';
+export { encontrarNaveNoPonto, obterNaveSelecionada, selecionarNave, enviarNaveParaAlvo, enviarNaveParaPosicao, definirRotaManualNave, cancelarMovimentoNave, parseAcaoNave, capacidadeCargaCargueira, ajustarConfiguracaoCarga, definirPlanetaRotaCargueira, alternarLoopCargueira, confirmarColonizacao, manterComoOutpost } from './naves';
 export { iniciarPesquisa, pesquisaTierLiberada, pesquisaTierDisponivel, getPesquisaAtual } from './pesquisa';
 export { nomeTipoPlaneta } from './planeta';
 
@@ -76,6 +76,7 @@ function atualizarOrbitaPlaneta(planeta: Planeta, deltaMs: number): void {
 // === Criação do mundo ===
 export async function criarMundo(app: Application, tipoJogador: TipoJogador): Promise<Mundo> {
   resetarNomesPlanetas();
+  void carregarSpritesheetNaves();
   const tamanho = Math.max(window.innerWidth, window.innerHeight) * 30;
   const container = new Container();
 
@@ -93,9 +94,9 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
   const orbitasContainer = new Container();
   const memoriaPlanetasContainer = criarCamadaMemoria();
 
-  container.addChild(frotasContainer);
-  container.addChild(navesContainer);
-
+  // Build the system objects first — `criarSistemaSolar` appends each sun
+  // and planet directly onto `container`, so they need to exist before
+  // we stack the ship / route / fog / memory layers on top.
   const totalSistemas = 18;
   let tentativasSistema = 0;
   const DIST_MIN = 4500;
@@ -121,9 +122,16 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
     planetas.push(...sistema.planetas);
   }
 
-  container.addChild(visaoContainer);
-  container.addChild(rotasContainer);
+  // Correct z-order (bottom → top):
+  //   fundo → planets (added via criarSistemaSolar) → orbit rings →
+  //   fleets → ships → ship routes → fog → memory ghosts.
+  // Fog has transparent holes where vision sources sit, so ships in
+  // visible territory remain visible through them.
   container.addChild(orbitasContainer);
+  container.addChild(frotasContainer);
+  container.addChild(navesContainer);
+  container.addChild(rotasContainer);
+  container.addChild(visaoContainer);
   container.addChild(memoriaPlanetasContainer);
 
   if (!planetas.some((p) => p.dados.tipoPlaneta === TIPO_PLANETA.COMUM) && planetas.length > 0) {
