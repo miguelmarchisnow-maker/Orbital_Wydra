@@ -186,8 +186,8 @@ function processarLoopCargueira(nave: Nave): void {
 
 function desenharNaveGfx(nave: Nave): void {
   // Redraws the ring overlay. The sprite itself never needs to be re-rendered.
-  // Called on selection change (static) and each frame while survey is active
-  // (animated pulse). Inexpensive — just one or two circle strokes.
+  // Called on selection change (static) and each frame while the ship is in
+  // an animated state (survey / decision / outpost pulse).
   const ring = nave._ring;
   if (!ring) return;
   ring.clear();
@@ -195,16 +195,23 @@ function desenharNaveGfx(nave: Nave): void {
 
   if (nave.estado === 'fazendo_survey' && nave.surveyTempoTotalMs) {
     const progress = 1 - (nave.surveyTempoRestanteMs ?? 0) / nave.surveyTempoTotalMs;
-    // Outer pulse radius grows then resets 2x during the survey window.
     const pulse = (performance.now() / 400) % 1;
     const pulseRadius = baseRadius * (1 + pulse * 2.5);
     const pulseAlpha = (1 - pulse) * 0.55;
     ring.circle(0, 0, pulseRadius).stroke({ color: 0x8ce0ff, width: 1.2, alpha: pulseAlpha });
-    // Progress arc at a fixed outer ring.
     const arcRadius = baseRadius * 1.8;
     ring.circle(0, 0, arcRadius).stroke({ color: 0x8ce0ff, width: 1, alpha: 0.25 });
     ring.arc(0, 0, arcRadius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2)
       .stroke({ color: 0x8ce0ff, width: 2, alpha: 0.9 });
+  } else if (nave.estado === 'aguardando_decisao') {
+    // Static double ring + slow breath to indicate "awaiting player input".
+    const breath = 0.5 + Math.sin(performance.now() / 500) * 0.25;
+    ring.circle(0, 0, baseRadius * 1.8).stroke({ color: 0xffd97a, width: 1.4, alpha: 0.85 });
+    ring.circle(0, 0, baseRadius * 2.2).stroke({ color: 0xffd97a, width: 1, alpha: breath });
+  } else if (nave.tipo === 'colonizadora' && nave.estado === 'orbitando' && _ehOutpost(nave)) {
+    // Permanent outpost marker — a dim teal ring so the player can tell a
+    // post-survey outpost apart from a normal orbit around its origin.
+    ring.circle(0, 0, baseRadius * 1.6).stroke({ color: 0x60ccff, width: 1, alpha: 0.35 });
   }
 
   if (nave.selecionado) {
@@ -212,12 +219,43 @@ function desenharNaveGfx(nave: Nave): void {
   }
 }
 
+/**
+ * A colonizadora is considered an "outpost" when it's orbiting a target that
+ * isn't its origin planet — i.e. a survey concluded somewhere that couldn't
+ * be colonised (star, own planet, hostile) and the ship was left parked as
+ * a permanent observation post.
+ */
+function _ehOutpost(nave: Nave): boolean {
+  if (nave.tipo !== 'colonizadora') return false;
+  if (nave.estado !== 'orbitando') return false;
+  if (!nave.alvo) return false;
+  if (nave.alvo === nave.origem) return false;
+  return true;
+}
+
+export function ehColonizadoraOutpost(nave: Nave): boolean {
+  return _ehOutpost(nave);
+}
+
 function desenharRotaNave(nave: Nave): void {
   const g = nave.rotaGfx;
   g.clear();
-  const pontos: AlvoPonto[] = [];
-  if (nave.alvo?._tipoAlvo === 'ponto') pontos.push(nave.alvo);
-  if (nave.rotaManual.length > 0) pontos.push(...nave.rotaManual);
+
+  // Route points accumulated for the polyline. Planets/stars contribute
+  // their world position so the player sees exactly where the ship is
+  // heading — previously only AlvoPonto waypoints drew, so a ship flying
+  // toward a planet had zero visual confirmation of destination.
+  const pontos: Array<{ x: number; y: number; radius: number; color: number }> = [];
+  if (nave.alvo) {
+    if (nave.alvo._tipoAlvo === 'ponto') {
+      pontos.push({ x: nave.alvo.x, y: nave.alvo.y, radius: 3.5, color: COR_PONTO_ROTA_NAVE });
+    } else if (nave.alvo._tipoAlvo === 'planeta' || nave.alvo._tipoAlvo === 'sol') {
+      pontos.push({ x: nave.alvo.x, y: nave.alvo.y, radius: 6, color: 0x8ce0ff });
+    }
+  }
+  for (const p of nave.rotaManual) {
+    pontos.push({ x: p.x, y: p.y, radius: 3.5, color: COR_PONTO_ROTA_NAVE });
+  }
   if (pontos.length <= 0) return;
 
   g.moveTo(nave.x, nave.y);
@@ -227,8 +265,8 @@ function desenharRotaNave(nave: Nave): void {
   g.stroke({ color: COR_ROTA_NAVE, width: 1.2, alpha: ALPHA_ROTA_NAVE });
 
   for (const ponto of pontos) {
-    g.circle(ponto.x, ponto.y, 3.5).fill({ color: 0x08111a, alpha: 0.96 });
-    g.circle(ponto.x, ponto.y, 3.5).stroke({ color: COR_PONTO_ROTA_NAVE, width: 1.1, alpha: 0.92 });
+    g.circle(ponto.x, ponto.y, ponto.radius).fill({ color: 0x08111a, alpha: 0.96 });
+    g.circle(ponto.x, ponto.y, ponto.radius).stroke({ color: ponto.color, width: 1.2, alpha: 0.95 });
   }
 }
 
@@ -244,12 +282,18 @@ function obterRaioAlvo(alvo: Planeta | Sol | AlvoPonto | null): number {
 }
 
 export function entrarEmOrbita(nave: Nave, alvo: Planeta | Sol | AlvoPonto): void {
-  const raio = obterRaioAlvo(alvo) + 18 + Math.random() * 28;
+  // Use the current approach angle so the ship doesn't teleport to a random
+  // point on the orbit circle. Fixed radius (no random jitter) so repeated
+  // orbit entries don't visually bounce the ship in and out.
+  const raio = obterRaioAlvo(alvo) + 20;
+  const dx = nave.x - alvo.x;
+  const dy = nave.y - alvo.y;
+  const angulo = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
   nave.estado = 'orbitando';
   nave.alvo = alvo;
   nave.orbita = {
     raio,
-    angulo: Math.random() * Math.PI * 2,
+    angulo,
     velocidade: VELOCIDADE_ORBITA_NAVE,
   };
 }
@@ -351,39 +395,36 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
       } else if (dist > 0) {
         nave.x += (dx / dist) * velReal * deltaMs;
         nave.y += (dy / dist) * velReal * deltaMs;
-        // Point the sprite along the direction of travel. Sprite nose is up
-        // (negative Y in Pixi), so add PI/2 to atan2(dy, dx).
-        if (nave._sprite) nave._sprite.rotation = Math.atan2(dy, dx) + Math.PI / 2;
+        // Ships in ships.png are side-profile art: rotation is meaningless,
+        // but mirroring the sprite so it faces its travel direction reads
+        // correctly. Keep rotation at 0 and flip scale.x based on dx.
+        if (nave._sprite) {
+          nave._sprite.rotation = 0;
+          if (dx !== 0) nave._sprite.scale.x = dx >= 0 ? Math.abs(nave._sprite.scale.x) : -Math.abs(nave._sprite.scale.x);
+        }
       }
     }
     if (nave.estado === 'orbitando' && nave.orbita && nave.alvo) {
       const prevX = nave.x;
-      const prevY = nave.y;
       nave.orbita.angulo += nave.orbita.velocidade * deltaMs;
       nave.x = nave.alvo.x + Math.cos(nave.orbita.angulo) * nave.orbita.raio;
       nave.y = nave.alvo.y + Math.sin(nave.orbita.angulo) * nave.orbita.raio;
-      // Point tangent to the orbit so the ship nose leads the motion.
       if (nave._sprite) {
+        nave._sprite.rotation = 0;
         const tdx = nave.x - prevX;
-        const tdy = nave.y - prevY;
-        if (tdx !== 0 || tdy !== 0) {
-          nave._sprite.rotation = Math.atan2(tdy, tdx) + Math.PI / 2;
-        }
+        if (tdx !== 0) nave._sprite.scale.x = tdx >= 0 ? Math.abs(nave._sprite.scale.x) : -Math.abs(nave._sprite.scale.x);
       }
     }
     if ((nave.estado === 'fazendo_survey' || nave.estado === 'aguardando_decisao') && nave.orbita && nave.alvo) {
       // Hold a slow orbit around the target while the survey counts down.
       const prevX = nave.x;
-      const prevY = nave.y;
       nave.orbita.angulo += nave.orbita.velocidade * 0.5 * deltaMs;
       nave.x = nave.alvo.x + Math.cos(nave.orbita.angulo) * nave.orbita.raio;
       nave.y = nave.alvo.y + Math.sin(nave.orbita.angulo) * nave.orbita.raio;
       if (nave._sprite) {
+        nave._sprite.rotation = 0;
         const tdx = nave.x - prevX;
-        const tdy = nave.y - prevY;
-        if (tdx !== 0 || tdy !== 0) {
-          nave._sprite.rotation = Math.atan2(tdy, tdx) + Math.PI / 2;
-        }
+        if (tdx !== 0) nave._sprite.scale.x = tdx >= 0 ? Math.abs(nave._sprite.scale.x) : -Math.abs(nave._sprite.scale.x);
       }
       if (nave.estado === 'fazendo_survey') {
         nave.surveyTempoRestanteMs = Math.max(0, (nave.surveyTempoRestanteMs ?? 0) - deltaMs);
@@ -395,7 +436,16 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
     }
     processarLoopCargueira(nave);
     desenharRotaNave(nave);
-    if (nave.estado === 'fazendo_survey') desenharNaveGfx(nave);
+    // Redraw the ring/pulse every frame while the ship is in an animated
+    // state (survey pulse or decision breath). Also redraw on every frame
+    // for outpost colonizadoras so their dim teal ring stays visible.
+    if (
+      nave.estado === 'fazendo_survey'
+      || nave.estado === 'aguardando_decisao'
+      || (nave.tipo === 'colonizadora' && _ehOutpost(nave))
+    ) {
+      desenharNaveGfx(nave);
+    }
     nave.gfx.x = nave.x;
     nave.gfx.y = nave.y;
   }
@@ -457,6 +507,30 @@ function finalizarSurvey(mundo: Mundo, nave: Nave): void {
   mostrarNotificacao('Survey completo — sem alvo colonizável. Nave em órbita.', '#ffcc66');
 }
 
+/**
+ * Recall a colonizadora back to its origin planet. Safe to call from any
+ * state — cancels survey/decision/movement cleanly and arms a new trip
+ * back to origem. No-op if origem is missing (shouldn't happen).
+ */
+export function recolherColonizadoraParaOrigem(mundo: Mundo, nave: Nave): boolean {
+  if (nave.tipo !== 'colonizadora' || !nave.origem) return false;
+  // Clear any survey/decision state so we can safely redispatch.
+  nave.surveyTempoRestanteMs = undefined;
+  nave.surveyTempoTotalMs = undefined;
+  nave.rotaManual = [];
+  nave.estado = 'viajando';
+  nave.alvo = nave.origem;
+  nave.orbita = null;
+  if (nave._ring) nave._ring.clear();
+  atualizarSelecaoNave(nave);
+  return true;
+}
+
+/** Scrap a colonizadora on demand (e.g. when the player gives up on a stuck outpost). */
+export function sucatearNave(mundo: Mundo, nave: Nave): void {
+  removerNave(mundo, nave);
+}
+
 /** Called by the colony-modal UI when the player confirms colonization. */
 export function confirmarColonizacao(mundo: Mundo, nave: Nave, nomeOverride?: string): boolean {
   const alvo = nave.alvo;
@@ -512,7 +586,14 @@ export function haColonizadoraRumoAoSistema(mundo: Mundo, sistemaId: number, ign
   for (const outra of mundo.naves) {
     if (outra === ignorar) continue;
     if (outra.tipo !== 'colonizadora') continue;
-    if (outra.estado !== 'viajando' && outra.estado !== 'fazendo_survey') continue;
+    // Also block while the ship is waiting for the player's decision —
+    // otherwise you can queue a second colonizadora into a system whose
+    // previous expedition is just sitting in the modal prompt.
+    if (
+      outra.estado !== 'viajando'
+      && outra.estado !== 'fazendo_survey'
+      && outra.estado !== 'aguardando_decisao'
+    ) continue;
     const alvo = outra.alvo;
     if (!alvo) continue;
     if (alvo._tipoAlvo === 'planeta' && alvo.dados.sistemaId === sistemaId) return true;
@@ -527,6 +608,16 @@ export function haColonizadoraRumoAoSistema(mundo: Mundo, sistemaId: number, ign
 
 export function enviarNaveParaAlvo(mundo: Mundo, nave: Nave, alvo: Planeta | Sol | AlvoPonto): boolean {
   if (!nave || !alvo) return false;
+  // Guard: re-dispatching a colonizadora mid-survey / mid-decision would
+  // silently abort the expedition. Require the caller to cancel first
+  // (via cancelarMovimentoNave) if that's actually what they want.
+  if (
+    nave.tipo === 'colonizadora'
+    && (nave.estado === 'fazendo_survey' || nave.estado === 'aguardando_decisao')
+  ) {
+    mostrarNotificacao('Cancele o survey atual antes de redirecionar a colonizadora.', '#ffcc66');
+    return false;
+  }
   // Cap: only one colonizadora in flight toward a given system at a time.
   if (nave.tipo === 'colonizadora' && (alvo._tipoAlvo === 'planeta' || alvo._tipoAlvo === 'sol')) {
     let targetSistema = alvo._tipoAlvo === 'planeta' ? alvo.dados.sistemaId : -1;
@@ -570,6 +661,13 @@ export function cancelarMovimentoNave(nave: Nave): void {
   nave.estado = 'parado';
   nave.alvo = null;
   nave.orbita = null;
+  // Clear any ghost survey timers so a cancelled-mid-survey ship doesn't
+  // carry stale fields into its next mission (or into the HUD display).
+  nave.surveyTempoRestanteMs = undefined;
+  nave.surveyTempoTotalMs = undefined;
+  // Wipe the scan ring / progress arc that may still be on screen.
+  if (nave._ring) nave._ring.clear();
+  atualizarSelecaoNave(nave);
 }
 
 export function parseAcaoNave(acao: string): AcaoNaveParsed | null {
