@@ -407,6 +407,22 @@ export function atualizarNaves(mundo: Mundo, deltaMs: number): void {
         if (tdx !== 0) nave._sprite.scale.x = tdx >= 0 ? Math.abs(nave._sprite.scale.x) : -Math.abs(nave._sprite.scale.x);
       }
     }
+    if (nave.estado === 'pilotando') {
+      // Real-time thrust: ship moves each frame by thrust * velocity * dt.
+      // Zero thrust → ship sits stationary in space. Magnitude was clamped
+      // to 1 at setNaveThrust time.
+      const tx = nave.thrustX ?? 0;
+      const ty = nave.thrustY ?? 0;
+      if (tx !== 0 || ty !== 0) {
+        const velReal = VELOCIDADE_NAVE * (cheats.velocidadeNave ? 10 : 1);
+        nave.x += tx * velReal * deltaMs;
+        nave.y += ty * velReal * deltaMs;
+        if (nave._sprite) {
+          nave._sprite.rotation = 0;
+          if (tx !== 0) nave._sprite.scale.x = tx >= 0 ? Math.abs(nave._sprite.scale.x) : -Math.abs(nave._sprite.scale.x);
+        }
+      }
+    }
     if ((nave.estado === 'fazendo_survey' || nave.estado === 'aguardando_decisao') && nave.orbita && nave.alvo) {
       // Hold a slow orbit around the target while the survey counts down.
       const prevX = nave.x;
@@ -657,9 +673,46 @@ export function cancelarMovimentoNave(nave: Nave): void {
   // carry stale fields into its next mission (or into the HUD display).
   nave.surveyTempoRestanteMs = undefined;
   nave.surveyTempoTotalMs = undefined;
+  nave.thrustX = 0;
+  nave.thrustY = 0;
   // Wipe the scan ring / progress arc that may still be on screen.
   if (nave._ring) nave._ring.clear();
   atualizarSelecaoNave(nave);
+}
+
+/**
+ * Switch a colonizadora into real-time piloting mode. The ship stops
+ * following any target/route and starts responding to thrust input each
+ * frame (set via setNaveThrust). Call this once when the cockpit panel
+ * first takes control; subsequent thrust updates don't need to re-call.
+ */
+export function iniciarPilotagem(nave: Nave): void {
+  if (nave.tipo !== 'colonizadora') return;
+  nave.rotaManual = [];
+  nave.alvo = null;
+  nave.orbita = null;
+  nave.estado = 'pilotando';
+  nave.thrustX = 0;
+  nave.thrustY = 0;
+  nave.surveyTempoRestanteMs = undefined;
+  nave.surveyTempoTotalMs = undefined;
+  if (nave._ring) nave._ring.clear();
+  atualizarSelecaoNave(nave);
+}
+
+/**
+ * Set the ship's thrust vector. Magnitude is clamped to 1 (full thrust
+ * in any direction). Zero vector = stopped. Only meaningful while the
+ * ship is in 'pilotando' state.
+ */
+export function setNaveThrust(nave: Nave, tx: number, ty: number): void {
+  const mag = Math.hypot(tx, ty);
+  if (mag > 1) {
+    tx /= mag;
+    ty /= mag;
+  }
+  nave.thrustX = tx;
+  nave.thrustY = ty;
 }
 
 export function parseAcaoNave(acao: string): AcaoNaveParsed | null {

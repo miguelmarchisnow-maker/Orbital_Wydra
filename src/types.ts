@@ -102,10 +102,14 @@ export interface Nave {
   dono: string;
   x: number;
   y: number;
-  estado: 'orbitando' | 'viajando' | 'parado' | 'fazendo_survey' | 'aguardando_decisao';
+  estado: 'orbitando' | 'viajando' | 'parado' | 'fazendo_survey' | 'aguardando_decisao' | 'pilotando';
   alvo: Planeta | Sol | AlvoPonto | null;
   surveyTempoRestanteMs?: number;
   surveyTempoTotalMs?: number;
+  // Real-time piloting thrust vector, normalized to magnitude ≤ 1.
+  // Non-null only while estado === 'pilotando'.
+  thrustX?: number;
+  thrustY?: number;
   selecionado: boolean;
   origem: Planeta;
   carga: Recursos;

@@ -8,7 +8,8 @@ import {
   recolherColonizadoraParaOrigem,
   sucatearNave,
   ehColonizadoraOutpost,
-  enviarNaveParaPosicao,
+  iniciarPilotagem,
+  setNaveThrust,
 } from '../world/mundo';
 import { TEMPO_SURVEY_MS } from '../world/constantes';
 import { carregarSpritesheet, getSpritesheetImage } from '../world/spritesheets';
@@ -25,6 +26,7 @@ type Stage =
   | 'idle'          // orbiting origem, no mission in progress
   | 'outpost'       // orbiting a non-origin target (post-survey outpost)
   | 'traveling'     // in transit to a target
+  | 'piloting'      // real-time thrust via joystick/D-pad
   | 'surveying'    // fazendo_survey
   | 'deciding';    // aguardando_decisao
 
@@ -32,6 +34,7 @@ function stageForNave(nave: Nave): Stage {
   if (nave.estado === 'fazendo_survey') return 'surveying';
   if (nave.estado === 'aguardando_decisao') return 'deciding';
   if (nave.estado === 'viajando') return 'traveling';
+  if (nave.estado === 'pilotando') return 'piloting';
   if (nave.estado === 'orbitando' && ehColonizadoraOutpost(nave)) return 'outpost';
   return 'idle';
 }
@@ -89,6 +92,7 @@ function stageLabel(stage: Stage): string {
     case 'idle': return 'Em prontidão';
     case 'outpost': return 'Posto de observação';
     case 'traveling': return 'Em trânsito';
+    case 'piloting': return 'Em pilotagem';
     case 'surveying': return 'Fazendo survey';
     case 'deciding': return 'Aguardando decisão';
   }
@@ -553,6 +557,9 @@ function injectStyles(): void {
 function computeRenderKey(nave: Nave): string {
   const stage = stageForNave(nave);
   const dist = distanceToTarget(nave);
+  // Thrust quantized to 10 steps so we get smooth-ish bar updates without
+  // rebuilding DOM on every sub-pixel drag delta.
+  const thrust = Math.round(Math.hypot(nave.thrustX ?? 0, nave.thrustY ?? 0) * 10);
   return [
     nave.id,
     stage,
@@ -563,6 +570,7 @@ function computeRenderKey(nave: Nave): string {
     nave.origem?.dados.nome ?? '',
     getComandoNaveTipo() ?? '',
     _movePanelOpen ? '1' : '0',
+    thrust,
   ].join('|');
 }
 
@@ -589,6 +597,9 @@ function renderPanel(nave: Nave): void {
 
   // ── Right section ──
   renderActions(nave, stage);
+
+  // Keep the joystick nub in sync with the ship's current thrust vector.
+  updateJoystickNubFromThrust(nave);
 }
 
 function renderMiddleInfo(nave: Nave, stage: Stage): void {
@@ -633,6 +644,18 @@ function renderMiddleInfo(nave: Nave, stage: Stage): void {
       _progressBarEl.style.width = '0%';
       _progressLabelEl.textContent = `ETA ${etaLabel(nave)}`;
       break;
+    case 'piloting': {
+      const tx = nave.thrustX ?? 0;
+      const ty = nave.thrustY ?? 0;
+      const mag = Math.hypot(tx, ty);
+      const thrusting = mag > 0.01;
+      _infoSubtitleEl.textContent = thrusting ? 'Thrusters ativos' : 'Motores em marcha lenta';
+      _progressBarEl.style.width = `${Math.round(mag * 100)}%`;
+      _progressLabelEl.textContent = thrusting
+        ? `Thrust ${Math.round(mag * 100)}%`
+        : 'Solte o joystick pra parar · Stop pra cancelar';
+      break;
+    }
     case 'surveying': {
       const pct = Math.round(surveyProgress(nave) * 100);
       _infoSubtitleEl.textContent = `Escaneando ${targetName(nave)}`;
@@ -710,7 +733,7 @@ const ACTIONS: ActionSpec[] = [
     label: 'Target',
     hint: 'Clique num planeta pra alvejar',
     variant: 'primary',
-    visible: (_n, stage) => stage === 'idle' || stage === 'outpost',
+    visible: (_n, stage) => stage === 'idle' || stage === 'outpost' || stage === 'piloting',
     enabled: () => true,
     onClick: (n) => {
       if (getComandoNaveTipo() === 'target_colonizadora') {
@@ -724,7 +747,7 @@ const ACTIONS: ActionSpec[] = [
     id: 'move',
     label: 'Mover',
     hint: 'Abrir painel de movimento livre',
-    visible: (_n, stage) => stage === 'idle' || stage === 'outpost',
+    visible: (_n, stage) => stage === 'idle' || stage === 'outpost' || stage === 'piloting',
     enabled: () => true,
     onClick: () => { _movePanelOpen = !_movePanelOpen; },
   },
@@ -732,8 +755,8 @@ const ACTIONS: ActionSpec[] = [
     id: 'recall',
     label: 'Recolher',
     hint: 'Voltar pra planeta de origem',
-    visible: (_n, stage) => stage === 'outpost' || stage === 'idle',
-    enabled: (n, stage) => stage === 'outpost' || (stage === 'idle' && n.alvo !== n.origem),
+    visible: (_n, stage) => stage === 'outpost' || stage === 'idle' || stage === 'piloting',
+    enabled: (n, stage) => stage !== 'idle' || n.alvo !== n.origem,
     onClick: (n) => {
       if (_mundoRef) recolherColonizadoraParaOrigem(_mundoRef, n);
     },
@@ -779,7 +802,7 @@ const ACTIONS: ActionSpec[] = [
     id: 'scrap',
     label: 'Sucatear',
     hint: 'Destruir a nave',
-    visible: (_n, stage) => stage === 'idle' || stage === 'outpost',
+    visible: (_n, stage) => stage === 'idle' || stage === 'outpost' || stage === 'piloting',
     enabled: () => true,
     onClick: (n) => {
       if (_mundoRef && confirm('Sucatear esta colonizadora? Essa ação é permanente.')) {
@@ -834,15 +857,36 @@ function renderActions(nave: Nave, stage: Stage): void {
   renderMovePanel(nave);
 }
 
-// Movement command helpers. The D-pad and joystick both boil down to
-// sending the ship to a world-space point at nave.x+dx, nave.y+dy.
-const DPAD_NUDGE_DIST = 700;
-const JOYSTICK_MAX_DIST = 1200;
+// Real-time piloting with inertial velocity. The thrust vector is a
+// persistent direction+magnitude — setting it makes the ship cruise in
+// that direction, releasing the joystick/button does NOT reset it. The
+// ship keeps moving until the player sets a new direction or hits STOP.
+//
+// Visual: the joystick nub sticks at the current thrust position so the
+// player can see the current velocity vector at a glance.
 
-function moveInDirection(nave: Nave, dx: number, dy: number): void {
-  if (!_mundoRef) return;
-  if (dx === 0 && dy === 0) return;
-  enviarNaveParaPosicao(_mundoRef, nave, nave.x + dx, nave.y + dy);
+let _joystickNubEl: HTMLDivElement | null = null;
+let _joystickMaxR = 0;
+
+function ensurePiloting(nave: Nave): void {
+  if (nave.estado !== 'pilotando') {
+    iniciarPilotagem(nave);
+  }
+}
+
+function applyThrust(nave: Nave, tx: number, ty: number): void {
+  ensurePiloting(nave);
+  setNaveThrust(nave, tx, ty);
+}
+
+/** Sync the nub visual to the ship's current thrust vector. */
+function updateJoystickNubFromThrust(nave: Nave): void {
+  if (!_joystickNubEl || _joystickMaxR <= 0) return;
+  const tx = nave.thrustX ?? 0;
+  const ty = nave.thrustY ?? 0;
+  const px = tx * _joystickMaxR;
+  const py = ty * _joystickMaxR;
+  _joystickNubEl.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px))`;
 }
 
 function renderMovePanel(nave: Nave): void {
@@ -863,6 +907,9 @@ function renderMovePanel(nave: Nave): void {
   _movePanelEl.appendChild(row);
 
   // ── Analog joystick ──
+  // Drag to set thrust direction + magnitude. Release = ship KEEPS
+  // cruising in that direction (inertial). Nub visually stays at the
+  // current thrust position so the player can read the velocity vector.
   const stick = document.createElement('div');
   stick.className = 'cp-joystick';
   const nub = document.createElement('div');
@@ -870,10 +917,26 @@ function renderMovePanel(nave: Nave): void {
   stick.appendChild(nub);
   row.appendChild(stick);
 
-  const joystickState = { active: false, pointerId: -1 };
-  const resetNub = () => {
-    nub.style.transform = 'translate(-50%, -50%)';
-    stick.classList.remove('active');
+  _joystickNubEl = nub;
+
+  const joystickState = { active: false, pointerId: -1, maxR: 0 };
+
+  const applyFromPointer = (clientX: number, clientY: number) => {
+    const rect = stick.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const maxR = rect.width * 0.38;
+    joystickState.maxR = maxR;
+    _joystickMaxR = maxR;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxR) { dx = (dx / dist) * maxR; dy = (dy / dist) * maxR; }
+    // Normalize to magnitude 0..1 for the thrust vector.
+    const tx = dx / maxR;
+    const ty = dy / maxR;
+    if (_selectedNave) applyThrust(_selectedNave, tx, ty);
+    nub.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
   };
 
   stick.addEventListener('pointerdown', (e) => {
@@ -884,53 +947,34 @@ function renderMovePanel(nave: Nave): void {
     joystickState.pointerId = e.pointerId;
     stick.setPointerCapture(e.pointerId);
     stick.classList.add('active');
+    applyFromPointer(e.clientX, e.clientY);
   });
   stick.addEventListener('pointermove', (e) => {
     if (!joystickState.active || e.pointerId !== joystickState.pointerId) return;
-    const rect = stick.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    let dx = e.clientX - cx;
-    let dy = e.clientY - cy;
-    const maxR = rect.width * 0.35;
-    const dist = Math.hypot(dx, dy);
-    if (dist > maxR) {
-      dx = (dx / dist) * maxR;
-      dy = (dy / dist) * maxR;
-    }
-    nub.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    applyFromPointer(e.clientX, e.clientY);
   });
-  stick.addEventListener('pointerup', (e) => {
+  const endDrag = (e: PointerEvent) => {
     if (!joystickState.active || e.pointerId !== joystickState.pointerId) return;
-    const rect = stick.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = e.clientX - cx;
-    const dy = e.clientY - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 5 && _selectedNave) {
-      // Magnitude scales with how far the stick was pushed (0 → 1).
-      const maxR = rect.width * 0.35;
-      const mag = Math.min(1, dist / maxR);
-      const worldDist = JOYSTICK_MAX_DIST * mag;
-      const ux = dx / dist;
-      const uy = dy / dist;
-      moveInDirection(_selectedNave, ux * worldDist, uy * worldDist);
-    }
     joystickState.active = false;
-    stick.releasePointerCapture(e.pointerId);
-    resetNub();
-  });
-  stick.addEventListener('pointercancel', () => {
-    joystickState.active = false;
-    resetNub();
-  });
+    try { stick.releasePointerCapture(e.pointerId); } catch {}
+    stick.classList.remove('active');
+    // Do NOT reset thrust — the ship keeps cruising in the current direction.
+  };
+  stick.addEventListener('pointerup', endDrag);
+  stick.addEventListener('pointercancel', endDrag);
 
   // ── D-pad ──
+  // Each click SETS the thrust direction to a cardinal unit vector.
+  // Ship cruises in that direction until another direction is picked or
+  // the stop button zeroes it out.
   const dpad = document.createElement('div');
   dpad.className = 'cp-dpad';
 
-  const makeDpadBtn = (label: string, cls: string, dx: number, dy: number, onClick?: () => void) => {
+  const setThrustDir = (tx: number, ty: number) => {
+    if (_selectedNave) applyThrust(_selectedNave, tx, ty);
+  };
+
+  const makeDpadBtn = (label: string, cls: string, onPress: () => void) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `cp-dpad-btn ${cls}`;
@@ -939,8 +983,8 @@ function renderMovePanel(nave: Nave): void {
       e.preventDefault();
       e.stopPropagation();
       marcarInteracaoUi();
-      if (onClick) { onClick(); return; }
-      if (_selectedNave) moveInDirection(_selectedNave, dx, dy);
+      onPress();
+      _renderKey = '';
     });
     return btn;
   };
@@ -952,15 +996,15 @@ function renderMovePanel(nave: Nave): void {
 
   // 3×3 grid; only cardinal cells are active buttons, corners are empty.
   dpad.appendChild(empty());
-  dpad.appendChild(makeDpadBtn('▲', 'up', 0, -DPAD_NUDGE_DIST));
+  dpad.appendChild(makeDpadBtn('▲', 'up', () => setThrustDir(0, -1)));
   dpad.appendChild(empty());
-  dpad.appendChild(makeDpadBtn('◀', 'left', -DPAD_NUDGE_DIST, 0));
-  dpad.appendChild(makeDpadBtn('■', 'stop', 0, 0, () => {
-    if (_selectedNave) cancelarMovimentoNave(_selectedNave);
+  dpad.appendChild(makeDpadBtn('◀', 'left', () => setThrustDir(-1, 0)));
+  dpad.appendChild(makeDpadBtn('■', 'stop', () => {
+    if (_selectedNave) applyThrust(_selectedNave, 0, 0);
   }));
-  dpad.appendChild(makeDpadBtn('▶', 'right', DPAD_NUDGE_DIST, 0));
+  dpad.appendChild(makeDpadBtn('▶', 'right', () => setThrustDir(1, 0)));
   dpad.appendChild(empty());
-  dpad.appendChild(makeDpadBtn('▼', 'down', 0, DPAD_NUDGE_DIST));
+  dpad.appendChild(makeDpadBtn('▼', 'down', () => setThrustDir(0, 1)));
   dpad.appendChild(empty());
   row.appendChild(dpad);
 
@@ -1003,6 +1047,8 @@ function renderMovePanel(nave: Nave): void {
       _movePanelEl.replaceChildren();
       _movePanelEl.classList.remove('visible');
     }
+    _joystickNubEl = null;
+    _joystickMaxR = 0;
     _renderKey = '';
   });
   footer.appendChild(closeBtn);
@@ -1098,6 +1144,8 @@ export function atualizarColonizerPanel(mundo: Mundo): void {
       _movePanelEl.replaceChildren();
     }
     _movePanelOpen = false;
+    _joystickNubEl = null;
+    _joystickMaxR = 0;
     _selectedNave = null;
     _renderKey = '';
     return;
