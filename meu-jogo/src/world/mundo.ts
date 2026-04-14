@@ -91,9 +91,9 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
   const orbitasContainer = new Container();
   const memoriaPlanetasContainer = criarCamadaMemoria();
 
-  container.addChild(frotasContainer);
-  container.addChild(navesContainer);
-
+  // Build the system objects first — `criarSistemaSolar` appends each sun
+  // and planet directly onto `container`, so they need to exist before
+  // we stack the ship / route / fog / memory layers on top.
   const totalSistemas = 18;
   let tentativasSistema = 0;
   const DIST_MIN = 4500;
@@ -119,9 +119,16 @@ export async function criarMundo(app: Application, tipoJogador: TipoJogador): Pr
     planetas.push(...sistema.planetas);
   }
 
-  container.addChild(visaoContainer);
-  container.addChild(rotasContainer);
+  // Correct z-order (bottom → top):
+  //   fundo → planets (added via criarSistemaSolar) → orbit rings →
+  //   fleets → ships → ship routes → fog → memory ghosts.
+  // Fog has transparent holes where vision sources sit, so ships in
+  // visible territory remain visible through them.
   container.addChild(orbitasContainer);
+  container.addChild(frotasContainer);
+  container.addChild(navesContainer);
+  container.addChild(rotasContainer);
+  container.addChild(visaoContainer);
   container.addChild(memoriaPlanetasContainer);
 
   if (!planetas.some((p) => p.dados.tipoPlaneta === TIPO_PLANETA.COMUM) && planetas.length > 0) {
