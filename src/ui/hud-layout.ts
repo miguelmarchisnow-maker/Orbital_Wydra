@@ -14,6 +14,7 @@ let _chatLogEl: HTMLElement | null = null;
 let _resourceBarEl: HTMLElement | null = null;
 let _creditsBarEl: HTMLElement | null = null;
 let _minimapEl: HTMLElement | null = null;
+let _planetPanelEl: HTMLElement | null = null;
 let _listeners: LayoutCallback[] = [];
 let _listening = false;
 
@@ -129,6 +130,17 @@ export function unregisterMinimap(): void {
   scheduleRecalc();
 }
 
+export function registerPlanetPanel(el: HTMLElement): void {
+  _planetPanelEl = el;
+  startListening();
+  scheduleRecalc();
+}
+
+export function unregisterPlanetPanel(): void {
+  _planetPanelEl = null;
+  scheduleRecalc();
+}
+
 
 function scheduleRecalc(): void {
   // Measurements are unreliable until layout flushes, so defer to next frame.
@@ -232,6 +244,19 @@ export function recalc(): void {
     const perItem = available / itemCount;
     const iconSize = Math.max(14, Math.min(26, perItem * 0.35));
     _sidebarEl.style.setProperty('--sb-icon', `${iconSize}px`);
+  }
+
+  if (_minimapEl) {
+    _minimapEl.style.right = `${margin}px`;
+    _minimapEl.style.bottom = `${margin}px`;
+  }
+
+  if (_planetPanelEl) {
+    // Vertical centering and slide-in are handled by CSS (top: 50% +
+    // translate(_, -50%)). Only constrain max height so the panel never
+    // overflows the viewport between margins.
+    const maxHeight = Math.max(0, vh - margin * 2);
+    _planetPanelEl.style.maxHeight = `${maxHeight}px`;
   }
 
   for (const cb of _listeners) cb();

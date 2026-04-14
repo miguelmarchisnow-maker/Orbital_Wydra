@@ -11,6 +11,8 @@ import { criarCreditsBar } from './ui/credits-bar';
 import { criarMinimap, atualizarMinimap, onMinimapClick, onMinimapZoomIn, onMinimapZoomOut } from './ui/minimap';
 import { criarDebugMenu, atualizarDebugMenu, getDebugState, getCheats } from './ui/debug-menu';
 import { installRootVariables } from './ui/hud-layout';
+import { criarPlanetPanel, atualizarPlanetPanel } from './ui/planet-panel';
+import { criarBuildPanel, atualizarBuildPanel } from './ui/build-panel';
 import { somVitoria, somDerrota } from './audio/som';
 
 async function bootstrap(): Promise<void> {
@@ -50,6 +52,8 @@ async function bootstrap(): Promise<void> {
   criarChatLog();
   criarSidebar();
   criarMinimap(app, mundo);
+  criarPlanetPanel();
+  criarBuildPanel();
   onMinimapClick((worldX, worldY) => {
     setCameraPos(worldX, worldY);
   });
@@ -88,6 +92,8 @@ async function bootstrap(): Promise<void> {
     atualizarCamera(mundo, app);
     atualizarMundo(mundo, app, camera);
     atualizarMinimap(camera);
+    atualizarPlanetPanel(mundo, app);
+    atualizarBuildPanel(mundo);
     atualizarDebugMenu();
 
     const estado = getEstadoJogo();

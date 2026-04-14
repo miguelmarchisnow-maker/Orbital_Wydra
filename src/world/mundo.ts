@@ -6,6 +6,7 @@ import { TIPO_PLANETA } from './planeta';
 import { atualizarTempoPlanetas, atualizarLuzPlaneta } from './planeta-procedural';
 import { criarCamadaMemoria, criarMemoriaVisualPlaneta, registrarMemoriaPlaneta, atualizarVisibilidadeMemoria, atualizarEscalaLabelMemoria } from './nevoa';
 import { criarSistemaSolar } from './sistema';
+import { resetarNomesPlanetas } from './nomes';
 import { atualizarNaves, atualizarSelecaoNave } from './naves';
 import { atualizarPesquisaPlaneta } from './pesquisa';
 import { atualizarCampoDeVisao } from './visao';
@@ -15,7 +16,7 @@ import { profileMark, profileAcumular, profileFlush } from './profiling';
 // === Re-exports para manter compatibilidade de imports externos ===
 export { profiling } from './profiling';
 export { construirNoPlaneta } from './construcao';
-export { calcularCustoTier, calcularTempoConstrucaoMs, calcularTempoColonizadoraMs, calcularTempoCicloPlaneta, calcularTempoRestantePlaneta, getTierMax, textoProducaoCicloPlaneta } from './recursos';
+export { calcularCustoTier, calcularTempoConstrucaoMs, calcularTempoColonizadoraMs, calcularTempoCicloPlaneta, calcularTempoRestantePlaneta, getTierMax, textoProducaoCicloPlaneta, obterProducaoNaturalCiclo } from './recursos';
 export { encontrarNaveNoPonto, obterNaveSelecionada, selecionarNave, enviarNaveParaAlvo, enviarNaveParaPosicao, definirRotaManualNave, cancelarMovimentoNave, parseAcaoNave, capacidadeCargaCargueira, ajustarConfiguracaoCarga, definirPlanetaRotaCargueira, alternarLoopCargueira } from './naves';
 export { iniciarPesquisa, pesquisaTierLiberada, pesquisaTierDisponivel, getPesquisaAtual } from './pesquisa';
 export { nomeTipoPlaneta } from './planeta';
@@ -74,6 +75,7 @@ function atualizarOrbitaPlaneta(planeta: Planeta, deltaMs: number): void {
 
 // === Criação do mundo ===
 export async function criarMundo(app: Application, tipoJogador: TipoJogador): Promise<Mundo> {
+  resetarNomesPlanetas();
   const tamanho = Math.max(window.innerWidth, window.innerHeight) * 30;
   const container = new Container();
 

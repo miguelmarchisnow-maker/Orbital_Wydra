@@ -57,10 +57,12 @@ function injectStyles(): void {
   const style = document.createElement('style');
   style.textContent = `
     .debug-toggle {
+      /* Anchored to the top-right corner just below the credits-bar.
+         5.4u matches the credits-bar min-height; adding hud-gap leaves a
+         clean visual separation. */
       position: fixed;
-      bottom: var(--hud-margin);
-      left: 50%;
-      transform: translateX(-50%);
+      top: calc(var(--hud-margin) + var(--hud-unit) * 5.4 + var(--hud-gap));
+      right: var(--hud-margin);
       width: calc(var(--hud-unit) * 2.4);
       height: calc(var(--hud-unit) * 2.4);
       display: flex;
@@ -92,10 +94,11 @@ function injectStyles(): void {
 
     /* ═══ Fast floating menu (near DEV button) ═══ */
     .debug-fast {
+      /* Drops down from below the DEV toggle in the top-right corner.
+         Top = credits-bar bottom + gap + toggle height + small gap. */
       position: fixed;
-      bottom: calc(var(--hud-margin) + var(--hud-unit) * 3);
-      left: 50%;
-      transform: translateX(-50%);
+      top: calc(var(--hud-margin) + var(--hud-unit) * 8.2 + var(--hud-gap));
+      right: var(--hud-margin);
       min-width: clamp(240px, 26vmin, 320px);
       display: none;
       flex-direction: column;
