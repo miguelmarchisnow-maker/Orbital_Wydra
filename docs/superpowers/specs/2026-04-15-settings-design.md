@@ -168,6 +168,10 @@ export function aplicarConfigAtual(): void {
   const m = _state;
   if (!m) return;
   const a = getConfig().audio;
+  // Mute zera o gain efetivo, mas o volume "real" fica preservado em
+  // config. Assim quando o usuário unmuta, o volume volta ao valor que
+  // ele tinha antes — mesmo se ele mexeu no slider enquanto mutado
+  // (a mudança toma efeito imediato no unmute, não perde o valor).
   m.master.gain.value = a.master.muted ? 0 : a.master.volume;
   m.sfx.gain.value = a.sfx.muted ? 0 : a.sfx.volume;
   m.ui.gain.value = a.ui.muted ? 0 : a.ui.volume;
@@ -278,27 +282,29 @@ export function somEnvio(): void {
 
 Slider único com 4 posições (`alto` / `medio` / `baixo` / `minimo`) que mapeia pra um preset de flags concretas armazenadas em `config.graphics`.
 
-| Flag                  | Alto  | Médio  | Baixo | Mínimo |
-|-----------------------|-------|--------|-------|--------|
-| `fogThrottle`         | 1     | 2      | 3     | off (-1) |
-| `maxFantasmas`        | -1 (∞)| 30     | 15    | 0      |
-| `densidadeStarfield`  | 1.0   | 0.7    | 0.4   | 0.15   |
-| `shaderLive`          | true  | true   | false (baked) | false (baked) |
-| `mostrarOrbitas`      | true  | true   | true  | false  |
-| `scanlines`           | true  | false  | false | false  |
-| `fpsCap`              | 0 (∞) | 0      | 60    | 30     |
+| Flag                  | Alto   | Médio  | Baixo         | Mínimo        |
+|-----------------------|--------|--------|---------------|---------------|
+| `fogThrottle`         | 1      | 2      | 3             | 0 (off)       |
+| `maxFantasmas`        | -1 (∞) | 30     | 15            | 0             |
+| `densidadeStarfield`  | 1.0    | 0.7    | 0.4           | 0.15          |
+| `shaderLive`          | true   | true   | false (baked) | false (baked) |
+| `mostrarOrbitas`      | true   | true   | true          | false         |
 
-**Importante**: o slider de Qualidade **sobrescreve** essas 7 flags. Usuário pode depois mexer nelas individualmente em "Avançado" — o dropdown do slider mostra "(personalizado)" quando os valores divergem do preset.
+**Importante**: o slider de Qualidade sobrescreve **apenas essas 5 flags**. Scanlines, FPS cap, Fullscreen e Mostrar FPS são toggles **independentes** (Seção 3.4) — o slider não mexe neles. Quando o usuário mexe numa das 5 flags derivadas individualmente em "Avançado", o dropdown do slider mostra "(personalizado)" pra sinalizar divergência.
+
+**Convenção de sentinelas**: `fogThrottle: 0` significa fog desligado (sem canvas). `maxFantasmas: -1` significa ilimitado. `maxFantasmas: 0` significa desligado. `fpsCap: 0` significa sem limite.
 
 ### 3.2 Semântica de cada flag
 
-**`fogThrottle: number`** — existe hoje em `src/ui/debug.ts:35` (`config.fogThrottle`). Número de frames entre redraws do canvas do fog. Valores altos = fog "granulado" mas muito barato. `-1` = fog desligado completamente (sem canvas).
+**`fogThrottle: number`** — existe hoje em `src/ui/debug.ts:35` (`config.fogThrottle`). Número de frames entre redraws do canvas do fog. Valores altos = fog "granulado" mas muito barato. `0` = fog desligado completamente (sem canvas).
 
 **`maxFantasmas: number`** — novo. Limite máximo de planetas "lembrados" renderizados simultaneamente na camada de memória. `-1` = ilimitado. `0` = desligado. Pool ordenado por `timestamp` desc, apenas top-N renderizam. Os excedentes continuam no `WeakMap` — persistência intacta, só não renderizam. Isso é "quantitativo" no sentido que o jogo ainda lembra de todos os planetas descobertos (fundamental pra gameplay), mas só mostra os N mais recentes visualmente.
 
 **`densidadeStarfield: number`** — novo. Fator 0.0–1.0 multiplicando o número de estrelas geradas em `criarFundo`. Mudança exige recriar o fundo (barato, one-shot). Aplicado em `src/world/fundo.ts`.
 
-**`shaderLive: boolean`** — novo. Quando `true`, shaders procedurais de planeta/estrela rodam em cada frame via `atualizarTempoPlanetas`/`atualizarLuzPlaneta` em `src/world/planeta-procedural.ts`. Quando `false`, o shader roda uma vez na criação, o resultado é capturado como `RenderTexture` via `app.renderer.generateTexture(mesh)`, e o `Sprite` final usa essa textura baked. **Runtime: zero custo de shader, só sprite render normal**. Tradeoff: animações de superfície de planeta e pulso de estrela ficam **congeladas** (visual estático preservado, movimento ausente). Requer reload pra aplicar porque exige recriar todos os sprites com a nova estratégia.
+**`shaderLive: boolean`** — novo. Quando `true`, shaders procedurais de planeta/estrela rodam em cada frame via `atualizarTempoPlanetas`/`atualizarLuzPlaneta` em `src/world/planeta-procedural.ts`. Quando `false`, o shader roda uma vez na criação com `uTime = 0` (valor determinístico fixo, não `performance.now()`), o resultado é capturado como `RenderTexture` via `app.renderer.generateTexture(mesh)`, e o `Sprite` final usa essa textura baked. **Runtime: zero custo de shader, só sprite render normal**. Tradeoff: animações de superfície de planeta e pulso de estrela ficam **congeladas** (visual estático preservado, movimento ausente). O `uTime = 0` fixo garante que o bake seja determinístico — a mesma seed de geração produz o mesmo visual em toda sessão. Requer reload pra aplicar porque exige recriar todos os sprites com a nova estratégia.
+
+**Referência de API existente**: `src/ui/planet-panel.ts:~555` já usa `app.renderer.generateTexture` no projeto, então a API é conhecida por funcionar no Pixi 8 do projeto.
 
 **`mostrarOrbitas: boolean`** — controla `planeta._linhaOrbita.visible`. Quando `false`, todas as linhas de órbita ficam escondidas sem destruir os objetos Graphics.
 
@@ -311,69 +317,111 @@ Slider único com 4 posições (`alto` / `medio` / `baixo` / `minimo`) que mapei
 Controle independente do slider de Qualidade (escolha do usuário, não do preset).
 
 ```ts
-graphics.renderer: 'webgl' | 'webgpu';          // default 'webgl'
-graphics.webglVersion: 'auto' | '1' | '2';     // só aplica quando renderer === 'webgl'
+graphics.renderer: 'webgl' | 'webgpu';              // default 'webgl'
+graphics.webglVersion: 'auto' | '1' | '2';          // só aplica se renderer === 'webgl'
 graphics.gpuPreference: 'auto' | 'high-performance' | 'low-power';
 ```
 
-**`renderer`**: passa em `app.init` como `preference: 'webgl' | 'webgpu'`. Pixi 8 só tem esses dois backends (Canvas foi removido).
+**`renderer`**: passa em `app.init` como `preference: 'webgl' | 'webgpu'`. Pixi 8 suporta ambos backends. (Pixi 8 também ainda tem Canvas renderer, mas não é exposto como opção pro usuário porque é depreciado e tem feature set limitado — nem todos os shaders funcionam.)
 
-**`webglVersion`**: `'auto'` deixa o Pixi escolher (prefere WebGL 2 com fallback pra 1). `'1'` ou `'2'` forçam criando o contexto manualmente e passando via `app.init({ context })`:
+**`webglVersion`**: `'auto'` deixa o Pixi escolher (prefere WebGL 2 internamente, cai pra WebGL 1 se o hardware não suportar). `'1'` ou `'2'` forçam uma versão específica criando o canvas e contexto manualmente antes do `app.init`:
 
 ```ts
+// CAVEAT: app.init({ context }) é tipado como WebGL2RenderingContext em
+// Pixi 8. Passar WebGL 1 exige cast `as any`. O comportamento em runtime
+// é best-effort — o Pixi usa o contexto fornecido pra criar o renderer.
+// Testar empiricamente em cada mudança de versão do Pixi.
 if (gfx.renderer === 'webgl' && gfx.webglVersion !== 'auto') {
   const canvas = document.createElement('canvas');
   const ctxOpts: WebGLContextAttributes = {
     antialias: true,
     premultipliedAlpha: true,
-    powerPreference: gfx.gpuPreference === 'auto' ? 'default' : gfx.gpuPreference,
   };
+  if (gfx.gpuPreference !== 'auto') {
+    ctxOpts.powerPreference = gfx.gpuPreference;
+  }
   const gl = gfx.webglVersion === '1'
     ? canvas.getContext('webgl', ctxOpts)
     : canvas.getContext('webgl2', ctxOpts);
   if (gl) {
-    initOpts.context = gl;
-    initOpts.canvas = canvas;
+    baseInit.context = gl as any;        // cast intencional
+    baseInit.canvas = canvas as any;     // cast intencional (ICanvas)
   } else {
     console.warn(`[renderer] WebGL ${gfx.webglVersion} indisponível, caindo pra auto`);
     setConfig({ graphics: { ...gfx, webglVersion: 'auto' } });
+    // Reinicia com auto (o fluxo retry é parte do fallback chain abaixo)
   }
 }
 ```
 
-**`gpuPreference`**: passa em `app.init` como `powerPreference` (válido em ambos WebGL e WebGPU). Em laptops dual-GPU, `'high-performance'` força a GPU discreta, `'low-power'` força a integrada.
+**Verificação de viabilidade no plano**: a tarefa que implementa este trecho deve começar com um spike de 30 minutos — criar um canvas, pegar um contexto WebGL 1 e passar pro `app.init`. Se o Pixi 8 rejeitar em runtime (não só no typecheck), **remove a opção "WebGL 1 forçado"** da UI e deixa só `auto` e `2` (que são tipos-consistentes porque WebGL 2 é `WebGL2RenderingContext`). O plano deve documentar esse spike como pré-requisito.
+
+**`gpuPreference`**: passa em `app.init` como `powerPreference`. Em laptops dual-GPU, `'high-performance'` força a GPU discreta, `'low-power'` força a integrada. **Quando `gpuPreference === 'auto'`, o campo é omitido** do `initOpts` (não passado como `'default'` — Pixi 8 tipa o campo apenas `'high-performance' | 'low-power'`, e o comportamento default do browser já é o desejado).
 
 **Fallback chain** no boot:
 
 ```ts
-try {
-  await app.init({ ...initOpts, preference: gfx.renderer });
-} catch (err) {
-  if (gfx.renderer === 'webgpu') {
-    console.warn('[renderer] WebGPU failed, falling back to WebGL:', err);
-    setConfig({ graphics: { ...gfx, renderer: 'webgl' } });
-    await app.init({ ...initOpts, preference: 'webgl' });
-    // Toast deferido pra depois do HUD montar
-    window.setTimeout(
-      () => toast('WebGPU indisponível — usando WebGL', 'err'),
-      2000,
-    );
-  } else {
+const baseInit: any = {
+  width: window.innerWidth,
+  height: window.innerHeight,
+  backgroundColor: 0x000000,
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
+  antialias: true,
+};
+if (gfx.gpuPreference !== 'auto') {
+  baseInit.powerPreference = gfx.gpuPreference;
+}
+
+// Import-time flag: set direct on the module to pular observer durante boot.
+// Listeners do mixer/preset/etc podem tentar tocar em coisas não-inicializadas.
+// setConfigDuranteBoot escreve direto no _cache e localStorage sem disparar observer.
+async function bootInit(): Promise<void> {
+  try {
+    await app.init({ ...baseInit, preference: gfx.renderer });
+  } catch (err) {
+    if (gfx.renderer === 'webgpu') {
+      console.warn('[renderer] WebGPU failed, falling back to WebGL:', err);
+      setConfigDuranteBoot({ graphics: { ...gfx, renderer: 'webgl' } });
+      await app.init({ ...baseInit, preference: 'webgl' });
+      window.setTimeout(
+        () => toast('WebGPU indisponível — usando WebGL', 'err'),
+        2000,
+      );
+      return;
+    }
+    // Se o usuário forçou WebGL 2 ou WebGL 1 e falhou, volta pra auto
+    if (gfx.renderer === 'webgl' && gfx.webglVersion !== 'auto') {
+      console.warn(`[renderer] WebGL ${gfx.webglVersion} forçado falhou, caindo pra auto:`, err);
+      setConfigDuranteBoot({ graphics: { ...gfx, webglVersion: 'auto' } });
+      // Remove o context manual se estava no baseInit
+      delete baseInit.context;
+      delete baseInit.canvas;
+      await app.init({ ...baseInit, preference: 'webgl' });
+      window.setTimeout(
+        () => toast(`WebGL ${gfx.webglVersion} indisponível — usando automático`, 'err'),
+        2000,
+      );
+      return;
+    }
     throw err;
   }
 }
+await bootInit();
 ```
+
+**`setConfigDuranteBoot`**: variante de `setConfig` exportada por `src/core/config.ts` que atualiza `_cache` + escreve no localStorage mas **não dispara listeners**. Usada exclusivamente no caminho de boot antes dos listeners estarem prontos. Evita race entre fallback de renderer e observers parcialmente inicializados.
 
 ### 3.4 Toggles isolados (independentes do slider)
 
 Além do slider de Qualidade, 4 toggles diretos na aba Gráficos:
 
-1. **Fullscreen** — chama `document.documentElement.requestFullscreen()` / `document.exitFullscreen()`.
+1. **Fullscreen** — chama `document.documentElement.requestFullscreen()` / `document.exitFullscreen()`. **Deve ser chamado sincronamente dentro do event handler do checkbox**, não via observer — o gesto do usuário só vale dentro do callback original. Se for invocado via listener do observer pattern, o browser rejeita.
 2. **Scanlines CRT** — pode ser ligado/desligado independente do preset.
 3. **Mostrar FPS no canto** — adiciona um pequeno contador no HUD.
 4. **Limite de FPS** — dropdown 30 / 60 / 120 / Sem limite.
 
-Mudar o slider de Qualidade **não** mexe nesses 4 toggles — eles ficam como preferência explícita do usuário. A tabela da seção 3.1 inclui `scanlines` e `fpsCap` no preset porque a intenção é que ao mudar preset eles sigam, mas se o usuário mexer depois, ganha precedência. Igual os outros "avançados".
+Mudar o slider de Qualidade **não** mexe nesses 4 toggles — eles são preferências totalmente independentes. A tabela da seção 3.1 contém apenas as 5 flags derivadas do preset (`fogThrottle`, `maxFantasmas`, `densidadeStarfield`, `shaderLive`, `mostrarOrbitas`).
 
 ### 3.5 Migration da chave legada
 
@@ -440,9 +488,11 @@ Quando `confirmarDestrutivo === false`, click executa direto sem diálogo.
 
 **Implementação**: `src/core/player.ts` ganha um listener de `mousemove` que mede a distância do cursor às bordas da viewport. Se < 40px da borda e `edgeScroll === true` e `_gameStarted === true`, empurra `camera.x/y` proporcional à distância. Velocidade base ~800 world units/segundo na borda máxima.
 
-**Pegadinha — conflito com painéis**: quando o usuário abre um painel HUD (planet-panel, ship-panel, etc.), ele pode querer mover o cursor sobre o painel sem a câmera começar a rolar. Solução: marcar todos os containers HUD com `data-ui="true"` via atributo DOM; o listener de mousemove checa `e.target.closest('[data-ui="true"]')` e desativa edge-scroll se estiver dentro.
+**Pegadinha — conflito com painéis**: quando o usuário abre um painel HUD (planet-panel, ship-panel, etc.), ele pode querer mover o cursor sobre o painel sem a câmera começar a rolar. Solução: marcar todos os containers HUD com `data-ui="true"` via atributo DOM; o listener de mousemove checa `(e.target as HTMLElement)?.closest('[data-ui="true"]')` e desativa edge-scroll se estiver dentro.
 
-**Arquivos afetados**: `src/core/player.ts` (listener), `src/ui/planet-panel.ts`, `src/ui/ship-panel.ts`, `src/ui/build-panel.ts`, `src/ui/colonizer-panel.ts`, `src/ui/sidebar.ts`, `src/ui/settings-panel.ts` (todos ganham `data-ui="true"` no container raiz).
+**Requisito crítico de CSS**: todos os containers marcados `data-ui="true"` precisam ter `pointer-events: auto` (default de `div`, mas verifique — alguns overlays decorativos usam `pointer-events: none` pra "deixar clicks passarem"). Se um container HUD tem `pointer-events: none`, o `e.target` vai ignorá-lo e pular pro canvas atrás, quebrando o gate do edge-scroll. Na prática: **o container raiz de cada painel HUD tem `pointer-events: auto`**; sub-elementos decorativos podem ter `none` sem afetar o gate porque o teste `closest()` sobe a árvore até achar um ancestral correspondente.
+
+**Arquivos afetados**: `src/core/player.ts` (listener), `src/ui/planet-panel.ts`, `src/ui/ship-panel.ts`, `src/ui/build-panel.ts`, `src/ui/colonizer-panel.ts`, `src/ui/sidebar.ts`, `src/ui/settings-panel.ts`, `src/ui/new-world-modal.ts`, `src/ui/renderer-info-modal.ts`, `src/ui/colony-modal.ts`, `src/ui/confirm-dialog.ts` (todos ganham `data-ui="true"` no container raiz).
 
 ---
 
@@ -460,21 +510,22 @@ const cima = camera.y - margem;
 const baixo = camera.y + app.screen.height / zoom + margem;
 ```
 
-Assume que `camera.x/y` é o canto superior-esquerdo da viewport. Mas `src/main.ts` linha 130 aplica a transform:
+A transform da câmera em `src/main.ts` linha 130 é:
 
 ```ts
 container.x = -camera.x * camera.zoom + app.screen.width / 2;
 container.y = -camera.y * camera.zoom + app.screen.height / 2;
 ```
 
-Esse `+ app.screen.width / 2` significa que `camera.x/y` é **o ponto do mundo abaixo do centro da tela**, não o canto superior-esquerdo.
+Esse `+ app.screen.width / 2` faz com que `camera.x/y` seja **o ponto do mundo abaixo do centro da tela**. O bug no bloco de bounds: ele trata `camera.x/y` como se fosse o canto superior-esquerdo da viewport — então `esq = camera.x - 600` (só uma margem pequena à esquerda do centro) e `dir = camera.x + screen.width/zoom + 600` (tela inteira à direita do centro).
 
-**Consequência**: o retângulo de culling fica deslocado meia-tela pra direita/baixo. Metade da viewport visível (esquerda/topo) é culled cedo demais; metade fora da viewport (direita/baixo) segue marcada como visível. Resultado: flickering no pan + GPU renderizando o que não se vê.
+**Consequência**: o retângulo de culling fica deslocado pela metade da largura da viewport pra direita e pela metade da altura pra baixo. Metade visível (esquerda/topo) é culled cedo demais; metade fora (direita/baixo) continua marcada como visível. Resultado: flickering no pan + GPU renderizando o que não se vê.
 
 O mesmo bug está em:
 
-- **`src/world/fundo.ts:73–78`** — `atualizarFundo` é chamado com `camX = camera.x + app.screen.width / 2` (mix de world + pixel coords, também errado). Fundo internamente subtrai `telaW/2` de volta, cancelando o offset mas passando dimensões em pixels quando deveria ser world units.
-- **`src/world/nevoa.ts:295–298`** — `desenharNeblinaVisao` usa `worldX = camera.x - margem` como top-left do canvas de fog, mesmo erro.
+- **`src/world/fundo.ts:73–78`** — `atualizarFundo` é chamado por `mundo.ts` com `camX = camera.x + app.screen.width / 2` (mix de world + pixel coords). Dentro da função ela subtrai `telaW/2` de volta, o que **mascara parcialmente** o offset em `zoom=1` mas não em outros zooms. Além disso as dimensões `telaW/H` são passadas em **pixels** quando deveriam ser em **world units** — o starfield culling só funciona correto em `zoom=1`.
+- **`src/world/mundo-menu.ts:98`** — `atualizarMundoMenu` também chama `atualizarFundo`. Aqui o `camX/camY` já são centro-relativos (recebidos corretos de `main.ts:133`), mas as dimensões passam como `app.screen.width` e `app.screen.height` em pixels. Como o menu roda em `zoom ~ 0.55`, o culling do starfield menu tá errado. Precisa ser alterado pra passar world units (`app.screen.width / zoom`).
+- **`src/world/nevoa.ts:295–298`** — `desenharNeblinaVisao` usa `worldX = camera.x - margem` como top-left do canvas de fog, mesmo erro de centro-vs-top-left.
 
 ### 5.2 Fix — função pura extraída
 
@@ -497,13 +548,23 @@ export function calcularBoundsViewport(
   zoom: number,
   screenW: number,
   screenH: number,
+  margemMin: number = 600,
+  margemMultiplier: number = 0,
 ): ViewportBounds {
   const z = zoom || 1;
   const halfW = screenW / (2 * z);
   const halfH = screenH / (2 * z);
-  // Margem proporcional: 50% de meia-tela, mínimo 300 unidades de mundo.
-  // Dá buffer estável em qualquer zoom sem ficar tight no movimento.
-  const margem = Math.max(300, halfW * 0.5);
+  // Margem composta de três termos — usa o maior:
+  //   1. margemMin: piso absoluto em world units (default 600)
+  //   2. halfW * 0.5: proporcional à meia-largura (25% de cada lado)
+  //   3. margemMultiplier / z: buffer zoom-scaled (legado da nevoa, onde
+  //      a margem cresce conforme o usuário afasta — fog precisa escalar
+  //      assim pra não aparecer bordas ao panning em zoom out)
+  const margem = Math.max(
+    margemMin,
+    halfW * 0.5,
+    margemMultiplier > 0 ? margemMultiplier / z : 0,
+  );
   return {
     halfW,
     halfH,
@@ -572,20 +633,27 @@ export function atualizarFundo(
 
 ### 5.5 Aplicação em `nevoa.ts`
 
-Substitui o bloco de `desenharNeblinaVisao` (lines 292–298):
+Usa `calcularBoundsViewport` com `margemMultiplier = 1500` pra preservar exatamente o comportamento original. O código atual em `nevoa.ts:293` calcula `margem = 1500 * invZoom` — ou seja, a margem **cresce** quando o zoom out aumenta. Em `zoom=1` dá 1500; em `zoom=0.5` dá 3000. Essa escala é essencial pra o fog canvas não mostrar bordas durante panning em zoom-out.
+
+O parâmetro `margemMultiplier` em `calcularBoundsViewport` implementa exatamente essa semântica — quando setado, contribui `margemMultiplier / z` à margem final (junto com o piso `margemMin` e o proporcional `halfW * 0.5`).
 
 ```ts
-const invZoom = 1 / (zoom || 1);
-const halfW = (screenW * invZoom) / 2;
-const halfH = (screenH * invZoom) / 2;
-const margem = Math.max(500, halfW * 0.5);
-const worldX = camera.x - halfW - margem;
-const worldY = camera.y - halfH - margem;
-const worldW = (halfW + margem) * 2;
-const worldH = (halfH + margem) * 2;
+import { calcularBoundsViewport } from './viewport-bounds';
+
+// Dentro de desenharNeblinaVisao:
+// margemMin=0 (não usa piso), margemMultiplier=1500 (replica margem original)
+const bounds = calcularBoundsViewport(
+  camera.x, camera.y, zoom, screenW, screenH,
+  0,        // margemMin
+  1500,     // margemMultiplier — margem_fog = 1500 / zoom
+);
+const worldX = bounds.esq;
+const worldY = bounds.cima;
+const worldW = bounds.dir - bounds.esq;
+const worldH = bounds.baixo - bounds.cima;
 ```
 
-Isso alinha o canvas de fog com o retângulo real da viewport. A margem do fog é um pouco maior que a do culling geral (500 vs 300 min) porque o canvas do fog precisa estar confortavelmente maior que a tela visível pra não mostrar bordas do canvas quando a câmera se mexe.
+O culling geral (mundo.ts) usa `margemMin=600` sem multiplier — margem constante + proporcional à tela. O fog (nevoa.ts) usa `margemMultiplier=1500` sem piso — margem escala com zoom. Sites diferentes, necessidades diferentes, mesma função pura.
 
 ### 5.6 Testes unitários
 
@@ -624,9 +692,14 @@ describe('calcularBoundsViewport', () => {
     expect(b1.dir - b1.esq).toBeCloseTo(b0.dir - b0.esq);
   });
 
-  it('minimum margem is 300 world units', () => {
+  it('minimum margem defaults to 600 world units', () => {
     const b = calcularBoundsViewport(0, 0, 10, 100, 100);
-    expect(b.margem).toBeGreaterThanOrEqual(300);
+    expect(b.margem).toBeGreaterThanOrEqual(600);
+  });
+
+  it('custom margemMin parameter overrides the default', () => {
+    const b = calcularBoundsViewport(0, 0, 10, 100, 100, 1500);
+    expect(b.margem).toBeGreaterThanOrEqual(1500);
   });
 });
 ```
@@ -636,8 +709,9 @@ describe('calcularBoundsViewport', () => {
 - **Novo**: `src/world/viewport-bounds.ts`
 - **Novo**: `src/world/__tests__/viewport-bounds.test.ts`
 - **Modificado**: `src/world/mundo.ts` — substitui bloco de bounds + call site do fundo
-- **Modificado**: `src/world/fundo.ts` — só JSDoc
-- **Modificado**: `src/world/nevoa.ts` — substitui bloco de bounds do fog canvas
+- **Modificado**: `src/world/fundo.ts` — só JSDoc esclarecendo world-units
+- **Modificado**: `src/world/mundo-menu.ts` — ajusta call site de `atualizarFundo` pra passar centro + world units (corrige bug compensatório herdado)
+- **Modificado**: `src/world/nevoa.ts` — usa `calcularBoundsViewport` com `margemMultiplier=1500` (ver §5.5)
 
 ---
 
@@ -662,17 +736,18 @@ export interface OrbitalConfig {
   // Graphics
   graphics: {
     qualidadeEfeitos: 'alto' | 'medio' | 'baixo' | 'minimo';
+    // Independentes (não tocados pelo preset):
     fullscreen: boolean;
     scanlines: boolean;
     mostrarFps: boolean;
     fpsCap: number;                              // 0 = sem limite
     renderer: 'webgl' | 'webgpu';
-    webglVersion: 'auto' | '1' | '2';
+    webglVersion: 'auto' | '1' | '2';            // só aplica se renderer === 'webgl'
     gpuPreference: 'auto' | 'high-performance' | 'low-power';
-    // Derivadas do preset mas overrideáveis:
+    // Derivadas do preset (overrideáveis):
     mostrarOrbitas: boolean;
-    fogThrottle: number;                         // -1 = fog desligado
-    maxFantasmas: number;                        // -1 = ilimitado
+    fogThrottle: number;                         // 0 = fog desligado
+    maxFantasmas: number;                        // -1 = ilimitado, 0 = nenhum
     densidadeStarfield: number;                  // 0.0–1.0
     shaderLive: boolean;                         // false = baked
   };
@@ -728,16 +803,18 @@ import type { OrbitalConfig } from './config';
 import { getConfig, setConfig } from './config';
 
 type Nivel = OrbitalConfig['graphics']['qualidadeEfeitos'];
+type FlagsDerivadas = Pick<
+  OrbitalConfig['graphics'],
+  'fogThrottle' | 'maxFantasmas' | 'densidadeStarfield' | 'shaderLive' | 'mostrarOrbitas'
+>;
 
-const PRESETS: Record<Nivel, Partial<OrbitalConfig['graphics']>> = {
+const PRESETS: Record<Nivel, FlagsDerivadas> = {
   alto: {
     fogThrottle: 1,
     maxFantasmas: -1,
     densidadeStarfield: 1.0,
     shaderLive: true,
     mostrarOrbitas: true,
-    scanlines: true,
-    fpsCap: 0,
   },
   medio: {
     fogThrottle: 2,
@@ -745,8 +822,6 @@ const PRESETS: Record<Nivel, Partial<OrbitalConfig['graphics']>> = {
     densidadeStarfield: 0.7,
     shaderLive: true,
     mostrarOrbitas: true,
-    scanlines: false,
-    fpsCap: 0,
   },
   baixo: {
     fogThrottle: 3,
@@ -754,17 +829,13 @@ const PRESETS: Record<Nivel, Partial<OrbitalConfig['graphics']>> = {
     densidadeStarfield: 0.4,
     shaderLive: false,
     mostrarOrbitas: true,
-    scanlines: false,
-    fpsCap: 60,
   },
   minimo: {
-    fogThrottle: -1,
+    fogThrottle: 0,
     maxFantasmas: 0,
     densidadeStarfield: 0.15,
     shaderLive: false,
     mostrarOrbitas: false,
-    scanlines: false,
-    fpsCap: 30,
   },
 };
 
@@ -780,23 +851,45 @@ export function aplicarPreset(nivel: Nivel): void {
   });
 }
 
-export function presetAtualBate(cfg: OrbitalConfig): boolean {
+/**
+ * Retorna true se as 5 flags derivadas do preset (fogThrottle,
+ * maxFantasmas, densidadeStarfield, shaderLive, mostrarOrbitas)
+ * batem com o preset indicado por `qualidadeEfeitos`. Retorna false
+ * se houver qualquer divergência (usuário customizou manualmente).
+ *
+ * NÃO considera as flags independentes (scanlines, fpsCap, etc).
+ */
+export function presetBateComFlagsDerivadas(cfg: OrbitalConfig): boolean {
   const esperado = PRESETS[cfg.graphics.qualidadeEfeitos];
-  for (const k of Object.keys(esperado) as Array<keyof typeof esperado>) {
-    if ((cfg.graphics as any)[k] !== (esperado as any)[k]) return false;
+  for (const k of Object.keys(esperado) as Array<keyof FlagsDerivadas>) {
+    if (cfg.graphics[k] !== esperado[k]) return false;
   }
   return true;
 }
 ```
 
-O `presetAtualBate` é usado pela UI pra mostrar "(personalizado)" no dropdown quando os valores divergem.
+O `presetBateComFlagsDerivadas` é usado pela UI pra mostrar "(personalizado)" no dropdown quando os valores divergem. **Nome canônico em todo o spec**: `presetBateComFlagsDerivadas` (não `presetAtualBate` nem variantes).
 
 ### 6.4 Observer pattern
 
 ```ts
 // Em src/core/config.ts
+
+/** DeepPartial: torna todos os campos nested opcionais. */
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
 type ConfigListener = (cfg: OrbitalConfig) => void;
 const _listeners = new Set<ConfigListener>();
+
+// Reentrance guard: se um listener chamar setConfig de volta, rejeitamos
+// com erro logado. Isso é intencionalmente restritivo — nenhum listener
+// do projeto (mixer, graphics-preset, player.ts, main.ts) tem motivo
+// legítimo pra reentrar. Um erro logado facilita diagnóstico quando
+// alguém introduz um loop acidental; solução correta é refatorar o
+// listener, não tornar reentrância OK.
+let _notifying = false;
 
 export function onConfigChange(fn: ConfigListener): () => void {
   _listeners.add(fn);
@@ -804,14 +897,43 @@ export function onConfigChange(fn: ConfigListener): () => void {
 }
 
 export function setConfig(partial: DeepPartial<OrbitalConfig>): void {
+  if (_notifying) {
+    console.error('[config] reentrant setConfig — ignored. Listener bug:', partial);
+    return;
+  }
   _cache = mergeDeep(getConfig(), partial);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache));
   } catch (err) {
     console.warn('[config] persist failed:', err);
   }
-  for (const fn of _listeners) {
-    try { fn(_cache); } catch (err) { console.error('[config] listener error:', err); }
+  _notifying = true;
+  try {
+    // Snapshot antes de iterar: listeners podem unsubscrever durante o notify
+    // e Set.forEach com mutação é fragil.
+    const snapshot = Array.from(_listeners);
+    for (const fn of snapshot) {
+      try { fn(_cache); } catch (err) { console.error('[config] listener error:', err); }
+    }
+  } finally {
+    _notifying = false;
+  }
+}
+
+/**
+ * Variante usada exclusivamente no caminho de boot de `main.ts`, antes
+ * de qualquer listener estar attached. Atualiza o cache + localStorage
+ * mas NÃO dispara observers. Isso evita race entre o fallback chain do
+ * renderer (§3.3) e observers parcialmente inicializados.
+ *
+ * NÃO usar em fluxos normais de runtime.
+ */
+export function setConfigDuranteBoot(partial: DeepPartial<OrbitalConfig>): void {
+  _cache = mergeDeep(getConfig(), partial);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache));
+  } catch (err) {
+    console.warn('[config] boot persist failed:', err);
   }
 }
 ```
@@ -867,7 +989,7 @@ function migrarChavesLegadas(cfg: OrbitalConfig): void {
 ### 6.6 Arquivos afetados (config)
 
 - **Modificado**: `src/core/config.ts` — expande com shape completo, observer pattern, mergeDeep, migration
-- **Novo**: `src/core/graphics-preset.ts` — presets + `aplicarPreset` + `presetAtualBate`
+- **Novo**: `src/core/graphics-preset.ts` — presets + `aplicarPreset` + `presetBateComFlagsDerivadas`
 
 ---
 
@@ -933,7 +1055,7 @@ Limite de FPS                [ Sem limite ▼ ]          (?)
 
 ━━━ Motor ━━━
 Motor de renderização        [ WebGL ▼ ]               (?)
-Versão do WebGL              [ Automático ▼ ]          (?)    ← só se WebGL
+  Versão do WebGL            [ Automático ▼ ]          (?)   ← só se WebGL
 Preferência de GPU           [ Automático ▼ ]          (?)
 
 [ Ver informações do renderer ]                        (?)
@@ -947,12 +1069,13 @@ Shader ao vivo               [ ☑ ]                     (?)
 
 **Banner "Requer recarregar"**: aparece inline abaixo de qualquer controle que exija reload pra aplicar. Texto: **"Requer recarregar o jogo. [Recarregar agora]"**. Click em "Recarregar agora" → `window.location.reload()`. Controles que disparam esse banner:
 
-- Shader ao vivo (muda estratégia de sprite)
-- Motor de renderização
-- Versão do WebGL
-- Preferência de GPU
-- Densidade de estrelas (exige recriar o fundo — borderline, dá pra fazer em runtime também; pra simplificar, marca como reload pra consistência)
-- Fullscreen (tecnicamente é live via `requestFullscreen`, mas se o browser bloquear o gesto, banner explica)
+- Shader ao vivo (muda estratégia de sprite — exige recriar os sprites e swap pra RenderTexture baked)
+- Motor de renderização (Pixi recria a pipeline inteira)
+- Versão do WebGL (contexto criado manualmente antes do `app.init`)
+- Preferência de GPU (browser só seleciona GPU em `getContext`/`requestAdapter`, exige reload)
+- Densidade de estrelas (starfield é gerado uma vez na criação do mundo — mudar em runtime exigiria recriar todo o fundo e seus containers. Reload é mais simples e confiável)
+
+**Fullscreen não usa banner**: o toggle chama `requestFullscreen()`/`exitFullscreen()` **sincronamente** dentro do handler do checkbox (o gesto de click é o que habilita a transição). Se o navegador rejeitar, toast de erro "Fullscreen bloqueado pelo navegador". **Crítico**: fullscreen **não pode** ser aplicado via observer pattern — o gesto só vale dentro do callback original. O listener do config observer é chamado *depois* que o gesto já se perdeu. Solução: o handler do checkbox chama `requestFullscreen` antes de chamar `setConfig`, e `setConfig` só persiste o estado.
 
 ### 7.4 Aba Jogabilidade
 
@@ -1155,6 +1278,7 @@ Versão da especificação usada pela pipeline gráfica.
   velhas e drivers bugados. Use só se o WebGL 2
   estiver crashando ou renderizando com artefatos.
 
+Só aplica quando o motor é WebGL (ignorado em WebGPU).
 Requer recarregar o jogo.
 ```
 
@@ -1216,8 +1340,8 @@ Densidade de estrelas
 Quantas estrelas compõem o fundo espacial.
 
 Valores baixos ganham performance em máquinas
-fracas. Mudança aplica ao recarregar o fundo
-na próxima entrada no jogo.
+fracas. Requer recarregar o jogo pra aplicar
+(o starfield é gerado uma vez na criação do mundo).
 ```
 
 **Max fantasmas**:
@@ -1269,6 +1393,8 @@ interface RendererInfo {
   features?: string[];      // WebGPU
   limits?: Record<string, unknown>;  // WebGPU
   software: boolean;
+  /** True se o navegador bloqueou info detalhada (privacy / no-extension). */
+  bloqueado: boolean;
 }
 
 export function abrirRendererInfoModal(app: Application): void {
@@ -1289,42 +1415,63 @@ function coletarInfo(app: Application): RendererInfo {
 }
 
 function coletarInfoWebGL(renderer: any): RendererInfo {
-  const gl: WebGLRenderingContext = renderer.gl;
+  const gl: WebGLRenderingContext | WebGL2RenderingContext | null = renderer.gl ?? null;
+  if (!gl) {
+    return { motor: 'WebGL', versao: 'desconhecido', gpu: 'desconhecido', vendor: 'desconhecido', software: false, bloqueado: true };
+  }
+  // WEBGL_debug_renderer_info é deprecated/bloqueado em vários contextos:
+  // Safari bloqueia por padrão desde 2020; Firefox com privacy.resistFingerprinting
+  // retorna strings genéricas; Chrome já sinalizou intenção de depreciar.
+  // Sempre null-check o resultado e mostre "bloqueado pelo navegador" quando ausente.
   const ext = gl.getExtension('WEBGL_debug_renderer_info');
   const gpu = ext
-    ? (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string)
-    : 'sem info';
+    ? (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string) || 'desconhecido'
+    : 'bloqueado pelo navegador';
   const vendor = ext
-    ? (gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) as string)
-    : 'sem info';
-  const versao = gl.getParameter(gl.VERSION) as string;
-  const software = /swiftshader|llvmpipe|software|basic render/i.test(gpu);
+    ? (gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) as string) || 'desconhecido'
+    : 'bloqueado pelo navegador';
+  const versao = (gl.getParameter(gl.VERSION) as string) ?? 'desconhecido';
+  // Software detection só faz sentido se temos o renderer string real.
+  const software = ext ? /swiftshader|llvmpipe|software|basic render/i.test(gpu) : false;
   return {
     motor: versao.includes('2.0') ? 'WebGL 2' : 'WebGL 1',
     versao,
     gpu,
     vendor,
-    driver: extrairDriver(gpu),
+    driver: ext ? extrairDriver(gpu) : undefined,
     maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
     maxVertexAttribs: gl.getParameter(gl.MAX_VERTEX_ATTRIBS) as number,
     maxUniformVectors: gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number,
     extensions: gl.getSupportedExtensions() ?? [],
     software,
+    bloqueado: !ext,
   };
 }
 
+/**
+ * WebGPU info é esforço-a-melhor: Pixi 8 não expõe `adapter` publicamente
+ * no tipo de `renderer`, então o acesso é via cast unsafe. Além disso, a
+ * spec do WebGPU explicitamente permite que browsers retornem strings
+ * vazias pros campos de `GPUAdapter.info` por motivos de privacidade.
+ * Chrome hoje preenche alguns campos; Firefox/Safari são mais restritivos.
+ * Sempre null-check e mostre "desconhecido" quando vazio.
+ */
 function coletarInfoWebGPU(renderer: any): RendererInfo {
-  const adapter = renderer.adapter as any;
-  const info = adapter?.info ?? {};
+  const adapter = (renderer as any).adapter ?? null;
+  const info = (adapter as any)?.info ?? {};
+  const device = info.device || 'desconhecido';
+  const vendor = info.vendor || 'desconhecido';
+  const architecture = info.architecture || '';
   return {
     motor: 'WebGPU',
     versao: 'WebGPU 1.0',
-    gpu: info.device ?? 'desconhecido',
-    vendor: info.vendor ?? 'desconhecido',
-    driver: info.architecture,
-    features: adapter?.features ? Array.from(adapter.features) : [],
-    limits: adapter?.limits ? { ...adapter.limits } : {},
-    software: /software|fallback/i.test(String(info.architecture ?? '')),
+    gpu: device,
+    vendor,
+    driver: architecture || undefined,
+    features: adapter?.features ? Array.from(adapter.features as Iterable<string>) : [],
+    limits: adapter?.limits ? Object.fromEntries(Object.entries(adapter.limits)) : {},
+    software: /software|fallback/i.test(architecture),
+    bloqueado: !adapter,
   };
 }
 
@@ -1383,6 +1530,19 @@ function montarModal(info: RendererInfo): HTMLDivElement {
 │  └─────────────────────────────────────┘        │
 ```
 
+**Se `bloqueado === true`** (detecção bloqueada pelo navegador), os campos GPU e Vendor aparecem como "bloqueado pelo navegador" e um bloco informativo:
+
+```
+│  [ℹ Detalhes da GPU não disponíveis]             │
+│    Seu navegador bloqueia info detalhada da       │
+│    GPU por privacidade (anti-fingerprinting).     │
+│    Isso é normal em Safari, Firefox com           │
+│    privacy.resistFingerprinting, e em tabs de     │
+│    navegação privada.                             │
+```
+
+**Realismo sobre WebGPU**: em WebGPU, mesmo quando não há "bloqueio" explícito, a spec permite que `GPUAdapter.info.device/vendor/architecture` retornem strings vazias por padrão. Resultado prático: em Firefox Nightly e Safari TP o modal vai mostrar "desconhecido" em quase tudo. Isso **não é bug** — é a API. Chrome hoje preenche alguns campos mas sinalizou intenção de reduzir.
+
 **Estilo**: mesmo padrão do `new-world-modal.ts` (overlay escuro com blur, card HUD centralizado). Reusa classes existentes onde possível.
 
 **Lista de extensões expansível**: click em "[Ver ▼]" expande um sub-painel scrollável (max-height ~200px) com a lista inteira em monospace pequeno. Útil pra debug, não polui o layout quando fechado.
@@ -1435,7 +1595,7 @@ function montarModal(info: RendererInfo): HTMLDivElement {
 **Unit tests (vitest)**:
 
 1. **`config.test.ts`** (expansão do existente no Save/Load): testa o shape completo, merge com defaults sobre parsed parcial (campos ausentes ganham default), observer pattern (listener notificado em mudança), reset por categoria vs. reset total.
-2. **`graphics-preset.test.ts`**: testa que `aplicarPreset('baixo')` setta exatamente as flags da tabela 3.1. Testa `presetAtualBate` retornando `false` depois de override manual.
+2. **`graphics-preset.test.ts`**: testa que `aplicarPreset('baixo')` setta exatamente as 5 flags derivadas da tabela 3.1. Testa `presetBateComFlagsDerivadas` retornando `false` depois de override manual.
 3. **`mixer.test.ts`**: mock do `AudioContext`, testa que `setConfig({ audio: { sfx: { volume: 0.5 } } })` → observer → `sfxGain.gain.value === 0.5`. Testa que mutar Master zera o master mantendo o valor real de volume em config.
 4. **`viewport-bounds.test.ts`** (Seção 5.6): função pura, já especificado.
 5. **`confirmar-acao.test.ts`**: testa que `confirmarDestrutivo: false` chama `onConfirm` direto; `true` chama `window.confirm` (mockado).
@@ -1462,7 +1622,7 @@ function montarModal(info: RendererInfo): HTMLDivElement {
 *Gráficos — motor:*
 
 12. Motor = WebGPU → recarregar → verifica via modal "Informações" que está WebGPU.
-13. Motor = WebGL + Versão = WebGL 1 forçado → reload → verifica versão no modal.
+13. Motor = WebGL + Versão = WebGL 1 forçado → reload → verifica versão no modal. **Condicional**: só se o spike prévio (§3.3) confirmar que Pixi 8 aceita contexto WebGL 1 manual. Se o spike falhar, essa opção é removida do dropdown e o teste vira inaplicável.
 14. Preferência de GPU = Alta performance → reload → em laptop dual-GPU, verifica GPU discreta no modal.
 15. Motor = WebGPU em Firefox sem suporte → fallback automático + toast.
 
@@ -1535,7 +1695,7 @@ src/audio/__tests__/mixer.test.ts
 src/ui/__tests__/confirmar-acao.test.ts
 ```
 
-**Modificados** (~15):
+**Modificados** (~18):
 
 ```
 src/core/config.ts              # expansão total do shape, observer pattern, migrations
@@ -1543,8 +1703,9 @@ src/core/__tests__/config.test.ts  # testes expandidos pro shape novo
 src/audio/som.ts                # categorias explícitas em cada somX
 src/main.ts                     # preference/powerPreference/context no app.init, fallback chain
 src/world/mundo.ts              # calcularBoundsViewport, consome mostrarOrbitas
-src/world/fundo.ts              # JSDoc, consome densidadeStarfield
-src/world/nevoa.ts              # calcularBoundsViewport, consome fogThrottle/maxFantasmas
+src/world/fundo.ts              # JSDoc esclarecendo world-units, consome densidadeStarfield
+src/world/mundo-menu.ts         # call site de atualizarFundo passa world units em vez de pixels
+src/world/nevoa.ts              # calcularBoundsViewport(margemMin=1500), consome fogThrottle/maxFantasmas
 src/world/planeta-procedural.ts # path de shader baking
 src/core/player.ts              # edge-scroll listener
 src/ui/settings-panel.ts        # reescrito: abas, tooltips, 4 audio, preset, motor, modal
@@ -1554,6 +1715,8 @@ src/ui/planet-panel.ts          # data-ui="true"
 src/ui/ship-panel.ts            # data-ui="true"
 src/ui/build-panel.ts           # data-ui="true"
 src/ui/colonizer-panel.ts       # data-ui="true"
+src/ui/colony-modal.ts          # data-ui="true"
+src/ui/confirm-dialog.ts        # data-ui="true"
 src/ui/debug.ts                 # remove renderer dropdown
 src/ui/debug-menu.ts            # remove renderer dropdown
 ```
@@ -1565,14 +1728,15 @@ src/ui/debug-menu.ts            # remove renderer dropdown
 | Risco                                                   | Mitigação                                                                         |
 |---------------------------------------------------------|-----------------------------------------------------------------------------------|
 | Refactor de som.ts quebra áudio em todos os call sites  | Mudar uma função por vez, smoke test cada uma via dev server antes de seguir      |
-| Shader bake fica visualmente diferente do live          | Bake é chamado na criação, mesma pipeline do shader live — se o frame 0 do shader live está correto, o bake está correto. Testa visualmente comparando screenshots antes/depois |
-| Viewport fix regride algo em `atualizarFundo`           | Teste unitário da função pura + smoke test manual zoom in/out/pan                 |
-| Edge-scroll dispara quando não deveria (sobre HUD)      | `data-ui="true"` + teste manual com cada painel aberto                            |
-| Modal de renderer trava se adapter ausente em WebGPU    | Null-checks em `coletarInfoWebGPU`, mostra "desconhecido" nos campos ausentes     |
-| Forçar WebGL 1 no Pixi 8 falha de forma inesperada      | Fallback pro auto + toast + config volta ao default. Teste manual em cada browser |
-| Tooltip fica por baixo de um modal                     | `z-index: 900` (modal de novo-mundo usa 600, renderer-info usa 700)               |
-| AudioContext proibido em iframes/privados               | Detecção no boot, banner "indisponível", função no-op                             |
-| Observer pattern loop infinito (listener chama setConfig)| Cada listener é try/catch; cuidado no código de listener pra não chamar setConfig do mesmo campo que disparou |
+| Shader bake fica visualmente diferente do live          | Bake roda na criação com `uTime = 0` determinístico. Visual comparado via screenshot manual antes/depois |
+| Viewport fix regride algo em `atualizarFundo`           | Função pura com testes unitários + `margemMin=600` default preserva buffer original pra fast pan + smoke test manual zoom in/out/pan |
+| Edge-scroll dispara sobre HUD                           | `data-ui="true"` + requisito `pointer-events: auto` no container raiz + teste manual com cada painel aberto |
+| Modal de renderer mostra campos vazios em WebGPU        | Null-checks, "desconhecido" como fallback, bloco informativo explicando privacy-redaction. Documentado como comportamento esperado, não bug |
+| `WEBGL_debug_renderer_info` bloqueado pelo navegador    | Detecta extensão ausente → flag `bloqueado: true` → UI mostra "bloqueado pelo navegador" com bloco explicativo. Software detection só roda se extension disponível |
+| Tooltip fica por baixo de um modal                     | `z-index: 900` no tooltip (acima de qualquer modal — new-world = 600, renderer-info = 700) |
+| AudioContext proibido em iframes/privados               | Detecção no boot, banner "indisponível", funções no-op silenciosas                |
+| Observer pattern reentrância / loop infinito           | Guarda reentrante em `setConfig`: se já tem um notify em execução, enfileira a próxima mudança e dispara depois. Implementação: flag `_notifying: boolean` |
+| Fullscreen gesture perdido via observer pattern         | `requestFullscreen()` chamado sincronamente no handler do checkbox, ANTES do `setConfig`. Observer só persiste estado, não dispara transição. |
 
 ---
 
