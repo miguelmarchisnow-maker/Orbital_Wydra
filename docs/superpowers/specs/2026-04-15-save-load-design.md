@@ -138,13 +138,15 @@ interface SolDTO {
 
 interface PlanetaDTO {
   id: string;
-  sistemaId: number;
   x: number;
   y: number;
   orbita: OrbitaPlaneta;          // já é plain data
-  dados: DadosPlaneta;            // já é plain data — copy raso
+  dados: DadosPlaneta;            // já é plain data — copy raso (clone de `pesquisas`)
   visivelAoJogador: boolean;
   descobertoAoJogador: boolean;
+  // A ligação planeta→sistema é expressa via SistemaDTO.planetaIds[]. O
+  // `dados.sistemaId: number` legado (índice numérico) é copiado como parte
+  // de `dados` e usado apenas por código display-side existente.
 }
 
 interface NaveDTO {
@@ -253,6 +255,8 @@ Arquivo: `src/world/save/periodic-save.ts`
 
 Por que não usar o ticker: ticker roda a 60Hz, é pausável pelo debug menu, e autosave não precisa sync de frame.
 
+**Tempo jogado acumulado**: `main.ts` mantém um contador `_tempoJogadoAcumulado: number` incrementado por `app.ticker.deltaMS` a cada tick da fase de jogo (não do menu). `serializarMundo` lê esse valor via um getter exposto (`getTempoJogadoMs()`) e o grava em `MundoDTO.tempoJogadoMs`. No carregamento, o valor é restaurado pra `_tempoJogadoAcumulado` antes do ticker reiniciar.
+
 ### 4.2 Fluxo de um save
 
 ```ts
@@ -341,7 +345,7 @@ Database `orbital_db`, version `1`. Object stores:
 | `planetas` | `[mundoNome, id]`    | Um registro por planeta                               |
 | `naves`    | `[mundoNome, id]`    | Um registro por nave                                  |
 
-Index secundário `mundoNome` em cada store pra listar/apagar eficientemente por mundo.
+Chaves compostas com `mundoNome` como prefixo permitem `IDBKeyRange.bound([nome, ''], [nome, '\uffff'])` pra varrer/apagar todas as entidades de um mundo sem precisar de index secundário.
 
 Load de um mundo: 1 `get` em `mundos` + 4 `getAll` filtrados por `mundoNome`. DTOs remontados em memória, passam pelo `reconstruirMundo()` igual ao modo periódico.
 
@@ -423,7 +427,7 @@ Hoje "Novo Jogo" chama `iniciarJogo()` direto. Muda pra:
    - Preview do nome no título do card, estilo `menu-title`.
    - Botões **Criar** (primary) e **Cancelar**.
 3. Click em Criar → valida → chama `iniciarJogo(nome, tipoJogador)` (assinatura nova).
-4. `iniciarJogo` recebe os params, seta `mundo.nome`, registra no índice, inicia o autosave.
+4. `iniciarJogo` recebe os params, seta `mundo.nome`, registra o mundo no backend ativo (via `storageBackend.registrarMundo(header)`) e inicia o autosave.
 
 ### 6.2 Tela "Mundos Salvos" — funcional
 
