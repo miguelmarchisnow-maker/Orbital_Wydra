@@ -36,6 +36,7 @@ Ambos compartilham a mesma camada de serialização/reconstrução.
 - Screenshots nos cards da lista de mundos
 - Refatoração do sistema de input (spec 3)
 - Internacionalização (spec 4)
+- **Persistência de estado hardcoded de HUD**: hoje `main.ts` chama `criarEmpireBadge('Valorian Empire', 24)` e `criarCreditsBar(43892)` com valores fixos que não vivem no `Mundo`. Este spec mantém esse comportamento — o nome do império e os créditos não fazem parte do save. Quando eles virarem estado real do jogo (parte de uma mecânica futura), um spec separado adiciona ao `MundoDTO`.
 
 ---
 
@@ -138,15 +139,37 @@ interface SolDTO {
 
 interface PlanetaDTO {
   id: string;
-  x: number;
-  y: number;
-  orbita: OrbitaPlaneta;          // já é plain data
+  orbita: OrbitaPlaneta;          // já é plain data — define a posição
   dados: DadosPlaneta;            // já é plain data — copy raso (clone de `pesquisas`)
   visivelAoJogador: boolean;
   descobertoAoJogador: boolean;
-  // A ligação planeta→sistema é expressa via SistemaDTO.planetaIds[]. O
-  // `dados.sistemaId: number` legado (índice numérico) é copiado como parte
-  // de `dados` e usado apenas por código display-side existente.
+  memoria: MemoriaPlanetaDTO | null;   // fog-of-war "último avistamento"
+  // `Planeta.x/y` NÃO são serializados — são derivados de `orbita` em
+  // `atualizarOrbitaPlaneta` e recalculados no primeiro tick após o load.
+  // A ligação planeta→sistema é expressa via `SistemaDTO.planetaIds[]`; o
+  // `dados.sistemaId: number` legado é copiado dentro de `dados`.
+  // `dados.selecionado` é forçado a `false` no load.
+}
+
+/**
+ * Snapshot de memória de fog-of-war (vive hoje em `nevoa.ts` num
+ * `WeakMap<Planeta, MemoriaPlaneta>`). É o que o jogador "lembra" de um
+ * planeta que já viu uma vez e depois saiu do alcance de visão.
+ */
+interface MemoriaPlanetaDTO {
+  conhecida: boolean;
+  snapshotX: number;
+  snapshotY: number;
+  idadeMs: number;                     // ver §3.2 — timestamps como idade
+  dados: {
+    dono: string;
+    tipoPlaneta: string;
+    tamanho: number;
+    fabricas: number;
+    infraestrutura: number;
+    naves: number;
+    producao: number;
+  };
 }
 
 interface NaveDTO {
@@ -156,7 +179,10 @@ interface NaveDTO {
   dono: string;
   x: number;
   y: number;
-  estado: Nave['estado'];
+  // String union explícita — desacopla o DTO do type do runtime pra
+  // permitir versionamento independente.
+  estado: 'orbitando' | 'viajando' | 'parado' | 'fazendo_survey'
+    | 'aguardando_decisao' | 'pilotando';
   carga: Recursos;
   configuracaoCarga: Recursos;
   orbita: OrbitaNave | null;
@@ -166,8 +192,9 @@ interface NaveDTO {
   thrustY?: number;
   origemId: string;
   alvo: AlvoDTO | null;
-  rotaManual: AlvoPontoDTO[];
+  rotaManual: AlvoPontoDTO[];     // AlvoPonto é plain data — copy raso
   rotaCargueira: RotaCargueiraDTO | null;
+  // `selecionado` é forçado a `false` no load — estado de UI transient.
 }
 
 type AlvoDTO =
@@ -212,16 +239,21 @@ Função pura, sem side effects. Walk no mundo, extrai campos de dados, troca re
 
 Pontos de cuidado:
 
-- `Nave.alvo` → discriminated union `AlvoDTO`:
-  - `_tipoAlvo === 'planeta'` → `{ tipo: 'planeta', id: alvo.id }`
-  - `_tipoAlvo === 'sol'` → `{ tipo: 'sol', id: alvo.id }`
-  - `_tipoAlvo === 'ponto'` → `{ tipo: 'ponto', x, y }`
-  - `null` → `null`
+- `Nave.alvo` → discriminated union `AlvoDTO`. O discriminator é **`nave.alvo._tipoAlvo`** (não `nave._tipoAlvo`, que sempre vale `'nave'` e identifica o próprio objeto):
+  - `nave.alvo._tipoAlvo === 'planeta'` → `{ tipo: 'planeta', id: nave.alvo.id }`
+  - `nave.alvo._tipoAlvo === 'sol'` → `{ tipo: 'sol', id: nave.alvo.id }`
+  - `nave.alvo._tipoAlvo === 'ponto'` → `{ tipo: 'ponto', x: nave.alvo.x, y: nave.alvo.y }`
+  - `nave.alvo === null` → `null`
 - `Nave.origem` → `origemId: origem.id`
 - `Nave.rotaCargueira.origem/destino` → IDs ou `null`
+- `Nave.rotaManual`: cada entrada é um `AlvoPonto` (plain data com `_tipoAlvo: 'ponto'`, `x`, `y`). Copy raso — não há referência a resolver.
 - `Sistema.sol` → `solId`
 - `Sistema.planetas` → `planetaIds[]`
-- Ordem estável: sistemas, sóis, planetas, naves **ordenados por ID**. Isso torna diffs de save inspecionáveis e simplifica testes de roundtrip.
+- **Memória de fog-of-war**: lê do `WeakMap` em `src/world/nevoa.ts` via `getMemoria(planeta)`. Converte `memoria.dados` (se não-null) no `MemoriaPlanetaDTO`, já aplicando a regra de timestamp abaixo.
+- **Timestamps como idade relativa** (blocker crítico): `performance.now()` reinicia a cada page load, então timestamps absolutos em ms são inúteis depois de um reload. Regra: qualquer timestamp persistido é convertido pra `idadeMs = performance.now() - valorAtual` no save, e rebase para `performance.now() - idadeMs` no load. Hoje só `memoria.timestamp` precisa disso — outros timestamps (`Mundo.ultimoTickMs`, caches de animação em `naves.ts`, toasts em `notificacao.ts`) **não são persistidos** de propósito.
+- **`Mundo.ultimoTickMs` não vai no DTO**: é só o "último frame" do game loop, usado internamente. No load, `reconstruirMundo` seta pra `performance.now()` fresco; o primeiro tick após o load usa o delta natural do ticker.
+- **Estado transient de UI zerado**: `planeta.dados.selecionado` e `nave.selecionado` sempre saem como `false` no DTO (ou são zerados na entrada do reconstruir).
+- **Ordem estável**: sistemas, sóis, planetas, naves **ordenados por ID** no output. Isso torna diffs de save inspecionáveis e simplifica testes de roundtrip.
 
 A função retorna um novo objeto; não muta o mundo.
 
@@ -229,19 +261,56 @@ A função retorna um novo objeto; não muta o mundo.
 
 Arquivo: `src/world/save/reconstruir.ts`
 
-Contraparte de `criarMundo()`. Segue a mesma ordem de montagem pra minimizar divergência de comportamento.
+Contraparte de `criarMundo()`. **Reusa as factories existentes** (`criarEstrelaProcedural`, `criarPlanetaProceduralSprite`, `criarMemoriaVisualPlaneta`, `registrarMemoriaPlaneta`) pra não divergir do caminho de criação normal. A ideia é: a única diferença entre criar um mundo novo e reconstruir um mundo é **de onde vêm os parâmetros** — no `criarMundo()` eles são procedurais/aleatórios, no `reconstruirMundo()` eles vêm do DTO.
 
 Fluxo:
 
-1. **Containers base**: cria `container`, `fundo`, `navesContainer`, `rotasContainer`, `visaoContainer`, `frotasContainer`, `orbitasContainer`, `memoriaPlanetasContainer`. O código atual em `criarMundo` que faz isso deve ser extraído pra um helper `criarMundoVazio(app)` que os dois consomem.
-2. **Sóis**: pra cada `SolDTO`, recria `Container`, aplica shader procedural de estrela, seta `_raio`, `_cor`, `_visivelAoJogador`, `_descobertoAoJogador`, position. Monta `solsById: Map<string, Sol>`.
-3. **Planetas**: pra cada `PlanetaDTO`, recria `Container`, graphics de órbita e anel, aplica shader procedural de planeta, copia `dados` do DTO (com clone de `pesquisas`), seta `_orbita`, visibilidade, position. Monta `planetasById: Map<string, Planeta>`.
-4. **Sistemas**: pra cada `SistemaDTO`, usa os mapas pra resolver `solId` → `Sol` e `planetaIds[]` → `Planeta[]`. Monta o objeto `Sistema`.
-5. **Naves**: pra cada `NaveDTO`, cria o objeto `Nave` com campos planos, resolve `origemId` → `planetasById.get(origemId)`, resolve `alvo` conforme o discriminator (`planeta`/`sol`/`ponto`), resolve `rotaCargueira.origemId/destinoId`. Cria `gfx: Container` vazio, `rotaGfx: Graphics` vazio. Sprites podem iniciar `undefined` — o código existente de sprite async pending cuida do resto.
-6. **Mundo**: monta o objeto `Mundo` com os arrays, containers, e campos top-level do DTO (`tamanho`, `tipoJogador`, `ultimoTickMs`, `fontesVisao`).
-7. **Stage**: adiciona `mundo.container` ao `app.stage` e retorna.
+0. **Reset de estado global**: chama `resetarNomesPlanetas()` de `src/world/nomes.ts` antes de começar (o Set `_nomesUsados` é module-level global e precisa ser zerado entre mundos). Ao criar cada planeta, pré-registra o nome no Set pra preservar o comportamento do `gerarNomePlaneta` caso o usuário crie mais mundos na mesma sessão.
 
-**Erros de referência**: se `origemId` ou qualquer ID referenciado não existe no save, lança `Error('Save corrompido: referência órfã <id>')`. Não tenta consertar.
+1. **Containers base via `criarMundoVazio(app, tamanho)`** — novo helper extraído do início de `criarMundo()`. Recebe `app` e `tamanho`, cria:
+   - `container: Container` (raiz do mundo)
+   - `fundo: Container` (starfield procedural via `criarFundo(tamanho)`)
+   - `orbitasContainer`, `frotasContainer`, `navesContainer`, `rotasContainer`, `visaoContainer`, `memoriaPlanetasContainer`
+   - Faz o `addChild` na ordem de z-stacking exata de `criarMundo()`:
+     ```
+     fundo → (sistemas adicionados depois, contendo sol+planetas) →
+     orbitasContainer → frotasContainer → navesContainer →
+     rotasContainer → visaoContainer → memoriaPlanetasContainer
+     ```
+   - Retorna todos os containers.
+   - Tanto `criarMundo` quanto `reconstruirMundo` consomem esse helper.
+
+2. **Sóis**: pra cada `SolDTO`, chama `criarEstrelaProcedural(x, y, raio)` (a factory real em `src/world/planeta-procedural.ts`). O objeto retornado já é o `Sol` com shader aplicado. Depois seta `_cor`, `_visivelAoJogador`, `_descobertoAoJogador`, `_raio` conforme o DTO. Adiciona ao `container`. Monta `solsById: Map<string, Sol>`.
+
+3. **Planetas**: pra cada `PlanetaDTO`:
+   - Chama `criarPlanetaProceduralSprite(x, y, tamanho, tipoPlaneta)` — factory real com o shader já aplicado. Recebe posição computada a partir de `orbita` (`centroX + cos(angulo) * raio`, idem y).
+   - Copia `dados` do DTO (spread raso + clone explícito de `pesquisas` e `filaProducao`). Seta `selecionado = false`.
+   - Seta `_orbita`, `_visivelAoJogador`, `_descobertoAoJogador`, `_tipoAlvo = 'planeta'`, `id` do DTO.
+   - Pré-registra o nome em `_nomesUsados`.
+   - Adiciona ao `container`.
+   - Monta `planetasById: Map<string, Planeta>`.
+
+4. **Memória de fog-of-war**: pra cada `Planeta` reconstruído, chama `criarMemoriaVisualPlaneta(mundo, planeta)` (a factory existente em `nevoa.ts`). Se o `PlanetaDTO.memoria.conhecida === true`, popula o `WeakMap` com um `MemoriaPlanetaSnapshot` reconstruído a partir do DTO, **rebasing o timestamp**: `timestamp = performance.now() - memoria.idadeMs`. Também seta `memoria.conhecida = true` e chama `redesenharVisualMemoria(memoria)` (ou deixa o próximo `atualizarVisibilidadeMemoria` fazer). Note: o `mundo` tem que estar montado o suficiente pra `criarMemoriaVisualPlaneta` funcionar — esse passo roda **depois** do passo 6 (montagem do Mundo), não aqui. Mantido nesta lista por clareza de dependência.
+
+5. **Sistemas**: pra cada `SistemaDTO`, usa os mapas pra resolver `solId` → `Sol` e `planetaIds[]` → `Planeta[]`. Monta o objeto `Sistema` literal.
+
+6. **Mundo**: monta o objeto `Mundo` com os arrays (`planetas`, `sistemas`, `sois`, `naves: []` inicialmente), containers, e campos top-level do DTO (`tamanho`, `tipoJogador`, `fontesVisao`). **`ultimoTickMs = performance.now()`** — valor fresco, não do DTO.
+
+7. **Naves**: pra cada `NaveDTO`, cria o objeto `Nave` com campos planos. Resolve referências via os mapas:
+   - `origemId` → `planetasById.get(id)` (lança se não existe)
+   - `alvo`: conforme discriminator — `tipo: 'planeta'` → `planetasById.get(id)`, `tipo: 'sol'` → `solsById.get(id)`, `tipo: 'ponto'` → `{ _tipoAlvo: 'ponto', x, y }`
+   - `rotaCargueira.origemId/destinoId` → planetas
+   - `rotaManual`: copy raso dos pontos (já são plain data)
+   - `selecionado = false`, `_selecaoAnterior = undefined`
+   - Cria `gfx: Container` vazio, `rotaGfx: Graphics` vazio. `_sprite` inicia `undefined` — o código existente de sprite async pending em `naves.ts` cuida do resto no próximo tick.
+   - Adiciona o `gfx` no `navesContainer` e o `rotaGfx` no `rotasContainer`.
+   - Push no `mundo.naves`.
+
+8. **Passo de memória (dependente de `mundo` montado)**: agora que `mundo.memoriaPlanetasContainer` existe com o próprio `Mundo`, executa o passo 4 de verdade — `criarMemoriaVisualPlaneta(mundo, planeta)` pra cada planeta, e se `PlanetaDTO.memoria` não-null, popula o WeakMap com o snapshot rebased.
+
+9. **Stage**: adiciona `mundo.container` ao `app.stage` e retorna `mundo`.
+
+**Erros de referência**: se `origemId`, `alvo.id`, `rotaCargueira.origemId/destinoId`, `SistemaDTO.solId` ou `SistemaDTO.planetaIds[*]` referenciam um ID inexistente, lança `Error('Save corrompido: referência órfã <id>')`. Não tenta consertar.
 
 ---
 
@@ -359,9 +428,11 @@ Três níveis:
 - **Per-category**: `mundoDirty: { sistemas: Set<string>; sois: Set<string>; planetas: Set<string>; naves: Set<string>; header: boolean }`. Reseta a cada flush.
 - **Header**: qualquer alteração em campos top-level (`ultimoTickMs`, `fontesVisao`, `tempoJogadoMs`).
 
-**Fase 1 (deste spec — pragmática)**: ao final de cada `atualizarMundo()`, marca **tudo como dirty** (todas as naves, todos os planetas, todos os sóis, header). Força flush completo por ciclo. Zero instrumentação nos pontos de mutação. Simples, entrega valor.
+**Fase 1 (deste spec — pragmática)**: ao final de cada `atualizarMundo()`, marca **tudo como dirty** (todas as naves, todos os planetas, todos os sóis, header). Zero instrumentação nos pontos de mutação.
 
-**Fase 2 (não implementada neste spec)**: instrumentar pontos de mutação reais (conclusão de fábrica, troca de estado de nave, etc.) pra flush verdadeiramente granular. Só vale se profiling mostrar custo de flush. Documentada como caminho evolutivo.
+**Importante**: marcar dirty a cada tick **não é o mesmo** que flushar a cada tick. O `FlushController` (§5.4) só consome os flags a cada **500ms / idle / visibilitychange**. Os ~60 ticks que rodam entre dois flushes apenas setam um flag que já estava setado — é uma operação O(1) sobre Sets/booleanos e custa próximo de zero. O flush real acontece no máximo 2× por segundo.
+
+**Fase 2 (não implementada neste spec)**: instrumentar pontos de mutação reais (conclusão de fábrica, troca de estado de nave, etc.) pra flush verdadeiramente granular (só entidades que mudaram de verdade, não todas). Só vale se profiling da fase 1 mostrar custo de flush não-trivial. Documentada como caminho evolutivo.
 
 ### 5.4 FlushController
 
@@ -400,7 +471,15 @@ async function flush(): Promise<void> {
 
 **Problema**: IndexedDB é async; em `beforeunload` a aba pode morrer antes do `put` terminar.
 
-**Solução**: em `beforeunload`, serializa estado dirty pra um blob JSON e grava **sincronamente** em `localStorage` na chave `orbital_emergency:<nome>`. No próximo boot, o sistema detecta essa chave e faz merge: aplica o emergency blob por cima do IndexedDB (que provavelmente tava até 500ms atrasado), apaga o emergency. Garante zero perda mesmo em shutdown abrupto.
+**Solução**: em `beforeunload`, serializa o **`MundoDTO` completo** (não um delta) via `serializarMundo(_mundo)` e grava **sincronamente** em `localStorage` na chave `orbital_emergency:<nome>`. No próximo boot, o sistema detecta essa chave e **substitui** o estado do mundo pelo emergency blob (que por definição é mais recente ou igual ao último flush do IndexedDB), depois apaga o emergency. Substituir, não fazer merge — DTO completo é mais simples e robusto que tentar reconciliar deltas.
+
+**Por que DTO completo**: merge por entidade precisaria decidir qual versão vence por campo, é fácil errar, e o custo sync de serializar um DTO de ~100KB é ~5ms — aceitável pro momento de fechar a aba.
+
+**Edge cases**:
+
+- **Emergency blob anterior ainda existia** (primeiro save falhou ou boot passado não rodou): antes de escrever, faz `localStorage.removeItem('orbital_emergency:<nome>')`, capturando `QuotaExceededError` no write subsequente.
+- **Quota estourada no `beforeunload`**: captura o erro, tenta apagar outros emergency blobs de outros mundos (`orbital_emergency:*`) pra liberar espaço, tenta de novo. Se ainda assim falhar, loga no console — não há como sinalizar pro usuário a essa altura do ciclo de vida da aba.
+- **`localStorage` também indisponível** (Safari modo privado extremo — raro mas real): não há fallback síncrono. Documentado: **modo experimental não garante zero perda nesse cenário**. O aviso de ativação do modo experimental (§5.1) é atualizado pra mencionar isso. O modo experimental detecta no boot se `localStorage` está disponível e, se não, desativa automaticamente com toast persistente.
 
 ### 5.6 Tratamento de erro
 
@@ -410,7 +489,11 @@ async function flush(): Promise<void> {
 
 ### 5.7 Custo esperado
 
-Flush por tick com "tudo dirty" = ~100 `put()` numa transaction + 1 `put()` de header. IndexedDB processa em <10ms em worker interno do browser. Async = zero impacto main thread. Impacto em FPS = 0.
+**Marcação dirty** (a cada tick, ~60Hz): `Set.add()` + bool = O(1) por entidade, <0.1ms pro mundo inteiro. Negligível.
+
+**Flush real** (a cada 500ms ou trigger, ~2Hz): com todos os 100 planetas e 30–50 naves marcados, emite ~150 `put()` numa transaction única + 1 `put()` de header. IndexedDB processa em ~5–15ms num worker interno do browser. Async = **zero bloqueio da main thread** enquanto roda. Amortizado: ~30ms de trabalho de IDB por segundo, tudo fora da main thread. Impacto em FPS = 0.
+
+**Sync emergency write** (só em `beforeunload`): serializa DTO completo + `localStorage.setItem`. ~5–10ms uma única vez por sessão. Aceitável.
 
 ---
 
@@ -418,7 +501,7 @@ Flush por tick com "tudo dirty" = ~100 `put()` numa transaction + 1 `put()` de h
 
 ### 6.1 Criação de mundo — nome obrigatório
 
-Hoje "Novo Jogo" chama `iniciarJogo()` direto. Muda pra:
+Hoje "Novo Jogo" chama `iniciarJogo()` direto sem parâmetros. Muda pra:
 
 1. Click em **Novo Jogo** → abre modal `new-world-modal.ts` (overlay sobre o main menu, estilo dos cards HUD existentes).
 2. Modal tem:
@@ -426,8 +509,16 @@ Hoje "Novo Jogo" chama `iniciarJogo()` direto. Muda pra:
    - Dropdown/radio **Tipo de jogador** (o `getTipos()[0]` atual como default; move-se da seleção atual pra cá).
    - Preview do nome no título do card, estilo `menu-title`.
    - Botões **Criar** (primary) e **Cancelar**.
-3. Click em Criar → valida → chama `iniciarJogo(nome, tipoJogador)` (assinatura nova).
-4. `iniciarJogo` recebe os params, seta `mundo.nome`, registra o mundo no backend ativo (via `storageBackend.registrarMundo(header)`) e inicia o autosave.
+3. Click em Criar → valida → chama `iniciarJogoNovo({ nome, tipoJogador })`.
+
+**Duas entradas distintas, não uma assinatura híbrida:**
+
+- `iniciarJogoNovo(opts: { nome: string; tipoJogador: TipoJogador }): Promise<void>` — fluxo novo-jogo. Destrói o mundo do menu, chama `criarMundo(app, tipoJogador)`, seta `mundo.nome`, registra o header no backend ativo (via `storageBackend.registrarMundo(header)`), instala HUD, inicia autosave.
+- `carregarMundo(nome: string): Promise<void>` — fluxo load-game. Destrói o mundo do menu, lê o DTO do backend ativo, passa por `migrarDto()` → `reconstruirMundo(dto, app)`, instala HUD (se ainda não instalado), inicia autosave.
+
+Os dois compartilham ~90% do código do `iniciarJogo` atual — o que difere é só a fonte do `Mundo` (criação procedural vs reconstrução). Extrair um helper `entrarNoJogo(mundo: Mundo)` privado que faça a parte comum (destruir menu → attach stage → instalar HUD → iniciar autosave) e os dois chamarem esse helper.
+
+A assinatura antiga `iniciarJogo()` é removida. `main.ts` expõe `iniciarJogoNovo` e `carregarMundo` como callbacks pro main menu.
 
 ### 6.2 Tela "Mundos Salvos" — funcional
 
@@ -492,13 +583,20 @@ Arquivo: `src/world/save/migrations.ts`
 ```ts
 const CURRENT_VERSION = 1;
 
+// migrations[i] migra da versão (i+1) pra (i+2).
+// Ou seja: v1 → v2 é migrations[0], v2 → v3 é migrations[1], etc.
 const migrations: Array<(dto: any) => any> = [
-  // migrations[0]: v1 → v2 (vazio por enquanto)
+  // Vazio no v1 — nenhuma migration necessária ainda.
 ];
 
 export function migrarDto(raw: any): MundoDTO {
   let current = raw;
-  const from = current.schemaVersion ?? 0;
+  const from = current.schemaVersion ?? 1;
+  if (from > CURRENT_VERSION) {
+    throw new Error(
+      `Save é de versão ${from}, mais nova que a atual (${CURRENT_VERSION}). Atualize o jogo.`,
+    );
+  }
   for (let v = from; v < CURRENT_VERSION; v++) {
     const migrate = migrations[v - 1];
     if (!migrate) throw new Error(`Sem migration pra v${v}→v${v + 1}`);
@@ -508,6 +606,8 @@ export function migrarDto(raw: any): MundoDTO {
   return current as MundoDTO;
 }
 ```
+
+Quando `CURRENT_VERSION = 1` e `from = 1`, o loop não executa e retorna o DTO direto — identity migration. Correto.
 
 Fluxo no load:
 
@@ -542,6 +642,8 @@ Runner: **adicionar `vitest`** como devDep. Cabe bem com Vite (zero config), `np
 
 **Manual playtesting checklist** (documentado pro QA):
 
+*Fluxo básico:*
+
 1. Criar mundo "A", jogar 30s, F5 (reload hard) → volta no main menu → "Mundos Salvos" mostra A → carregar → estado igual.
 2. Criar mundo "A", fechar aba → reabrir → carregar → mesmo.
 3. Setar autosave 30s, jogar 31s, F5 → progresso dos últimos 31s presente.
@@ -549,9 +651,25 @@ Runner: **adicionar `vitest`** como devDep. Cabe bem com Vite (zero config), `np
 5. Modo experimental on, jogar 10s, F5 → progresso dos 10s presente.
 6. Apagar save da lista → não está mais lá.
 7. Nome duplicado na criação → erro inline, modal não fecha.
-8. `localStorage.clear()` no devtools durante jogo → próximo autosave mostra erro de quota.
-9. (Experimental) Firefox modo privado → fallback automático pro periódico, toast de aviso.
-10. (Experimental) Kill the tab durante jogo → reabrir → estado dos últimos segundos presente via emergency blob.
+
+*Cobertura de campos específicos do `Mundo` (cada caso exerce um pedaço do DTO):*
+
+8. **Fog-of-war**: jogar até descobrir um planeta inimigo, afastar nave até o planeta sair do alcance de visão, esperar fog cobrir (fantasma com "há 20s atrás" visível). F5 e carregar. Checar: planeta ainda aparece como fantasma com texto de idade consistente (não zerou), dono/fábricas/naves do último avistamento preservados.
+9. **Pesquisa em andamento**: começar uma pesquisa, esperar 40% de progresso, F5. Carregar. Barra de progresso continua em 40%, tempo restante correto.
+10. **Construção em andamento**: começar uma fábrica, 50% de progresso, F5. Carregar. Construção continua de onde parou.
+11. **Nave em survey**: enviar batedora pra planeta, entrar em `fazendo_survey`, 30% de progresso, F5. Carregar. Survey continua.
+12. **Nave em piloting**: entrar em modo `pilotando` uma colonizadora com `thrustX/Y` ≠ 0, F5. Carregar. Nave volta em `pilotando` com os mesmos vetores de thrust.
+13. **Cargueira mid-loop**: configurar rota de cargueira com `loop: true`, pegar a nave no meio da fase `destino` com carga parcial, F5. Carregar. Rota, fase, carga e loop preservados.
+14. **Construção de nave na fila**: adicionar 3 itens na fila de produção de nave de um planeta, deixar a primeira 60% pronta, F5. Fila e progresso da atual preservados.
+15. **Naves descobertas com memória**: planeta inimigo descoberto, nave dele capturada pelo fog com estado histórico, F5. A memória mostra o snapshot correto.
+
+*Erros e fallback:*
+
+16. `localStorage.clear()` no devtools durante jogo → próximo autosave mostra erro de quota.
+17. (Experimental) Firefox modo privado → fallback automático pro periódico, toast de aviso.
+18. (Experimental) Kill the tab durante jogo → reabrir → estado dos últimos segundos presente via emergency blob.
+19. Corromper manualmente o JSON do save em devtools → tentar carregar → modal de erro com botão "Apagar mundo" e "Exportar save".
+20. Criar vários mundos na mesma sessão (sem recarregar) → verificar que `_nomesUsados` foi resetado entre mundos (planetas não ganham nomes fora do padrão).
 
 ### 7.6 Performance budget
 
@@ -585,15 +703,22 @@ src/ui/settings-panel.ts
 src/ui/toast.ts                          # se não existir sistema de notificação
 ```
 
-**Modificados** (~6):
+**Modificados** (~8):
 
 ```
-src/world/mundo.ts          # criarMundoVazio helper, IDs, destruirMundo
-src/world/planeta.ts        # campo id
-src/world/naves.ts          # refs já por ID implícito via DTO
+src/world/mundo.ts          # extrair criarMundoVazio(app, tamanho),
+                            # adicionar IDs em sol/planeta/sistema,
+                            # destruirMundo(mundo, app) (novo)
+src/world/sistema.ts        # IDs estáveis em sistema/sol/planeta na criação;
+                            # expor factories pro reconstruir
+src/world/planeta.ts        # campo id + nada mais
+src/world/nevoa.ts          # expor getMemoria/setMemoria que reconstruir usa
+                            # pra popular o WeakMap no load
+src/world/nomes.ts          # nenhum (já expõe resetarNomesPlanetas)
 src/ui/main-menu.ts         # lista saves real, flow com new-world-modal
 src/ui/sidebar.ts           # botões Salvar e Voltar ao Menu
-src/main.ts                 # iniciarJogo(nome, tipo), carregarMundo, autosave wiring
+src/main.ts                 # iniciarJogoNovo + carregarMundo + entrarNoJogo
+                            # helper comum, autosave wiring
 ```
 
 **Config**:
@@ -609,7 +734,10 @@ vitest.config.ts            # novo
 
 | Risco                                                       | Mitigação                                                              |
 |-------------------------------------------------------------|------------------------------------------------------------------------|
-| Shader/graphics recriado no load divergindo do original     | Extrair `criarMundoVazio` como helper compartilhado; garantir que `criarMundo` e `reconstruirMundo` usam o mesmo caminho. Testes manuais visuais no playtesting checklist. |
+| Shader/graphics recriado no load divergindo do original     | Extrair `criarMundoVazio` como helper compartilhado; `reconstruirMundo` reusa as mesmas factories (`criarEstrelaProcedural`, `criarPlanetaProceduralSprite`, `criarMemoriaVisualPlaneta`) que `criarMundo` usa. Testes manuais visuais no playtesting checklist. |
+| Memória de fog-of-war perdida no load                       | Serializada como `MemoriaPlanetaDTO` por planeta; no load, `reconstruirMundo` chama `criarMemoriaVisualPlaneta` + popula o WeakMap com timestamp rebased via `idadeMs`. Caso de teste dedicado no playtesting (#8). |
+| Timestamps `performance.now()` inválidos após reload        | Regra da §3.2: qualquer timestamp persistido é convertido pra `idadeMs` no save e rebased no load. `Mundo.ultimoTickMs` não persistido — valor fresco no load. |
+| `_nomesUsados` global acumulando entre mundos da sessão     | `reconstruirMundo` chama `resetarNomesPlanetas()` e pré-registra nomes do save no Set. Caso de teste #20. |
 | IndexedDB em modo privado Firefox falha silenciosa          | Fallback automático + toast. Documentado no tratamento de erro.        |
 | `localStorage` cheio no meio da sessão                      | Modal de gerenciamento de saves, autosave pausado até liberar.         |
 | Circular ref acidental no `serializarMundo`                 | Tipos DTO explícitos; `JSON.stringify` falha cedo em dev com stack.    |
