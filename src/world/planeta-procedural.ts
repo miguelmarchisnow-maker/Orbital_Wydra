@@ -1,8 +1,16 @@
-import { Mesh, Shader, GlProgram, GpuProgram, UniformGroup, Geometry, Buffer, State } from 'pixi.js';
+import { Mesh, Shader, GlProgram, GpuProgram, UniformGroup, Geometry, Buffer, State, Sprite } from 'pixi.js';
+import type { Application } from 'pixi.js';
 import vertexSrc from '../shaders/planeta.vert?raw';
 import fragmentSrc from '../shaders/planeta.frag?raw';
 import wgslSrc from '../shaders/planeta.wgsl?raw';
 import { TIPO_PLANETA } from './planeta';
+import { getConfig } from '../core/config';
+
+let _appRef: Application | null = null;
+
+export function setAppReferenceForBake(app: Application): void {
+  _appRef = app;
+}
 
 interface PaletaPlaneta {
   planetType: number;
@@ -265,6 +273,36 @@ export function criarPlanetaProceduralSprite(
   (mesh as any)._planetShader = shader;
   (mesh as any)._rotSpeed = rotSpeed;
 
+  // Bake path: capture shader output as static texture when shaderLive=false
+  if (!getConfig().graphics.shaderLive && _appRef) {
+    try {
+      // Force deterministic time (frame 0) before capturing
+      const bakeShader = (mesh as any)._planetShader as Shader | undefined;
+      if (bakeShader) {
+        const uniforms = (bakeShader.resources as any).planetUniforms.uniforms;
+        uniforms.uTime = 0;
+        uniforms.uRotation = 0;
+      }
+      const texture = _appRef.renderer.generateTexture({
+        target: mesh,
+        resolution: 1,
+        antialias: true,
+      });
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.x = x;
+      sprite.y = y;
+      sprite.width = tamanho;
+      sprite.height = tamanho;
+      // Copy metadata so downstream code (atualizarTempoPlanetas etc)
+      // sees no shader → skips update (which is what we want for baked)
+      mesh.destroy();
+      return sprite as any;
+    } catch (err) {
+      console.warn('[planeta-procedural] bake failed, using live shader:', err);
+    }
+  }
+
   return mesh;
 }
 
@@ -346,6 +384,35 @@ export function criarEstrelaProcedural(
   mesh.y = y;
   (mesh as any)._planetShader = shader;
   (mesh as any)._rotSpeed = 0.005 + Math.random() * 0.01;
+
+  // Bake path: capture shader output as static texture when shaderLive=false
+  if (!getConfig().graphics.shaderLive && _appRef) {
+    try {
+      const bakeShader = (mesh as any)._planetShader as Shader | undefined;
+      if (bakeShader) {
+        const uniforms = (bakeShader.resources as any).planetUniforms.uniforms;
+        uniforms.uTime = 0;
+        uniforms.uRotation = 0;
+      }
+      const texture = _appRef.renderer.generateTexture({
+        target: mesh,
+        resolution: 1,
+        antialias: true,
+      });
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.x = x;
+      sprite.y = y;
+      const bakeTamanho = raio * 2.9;
+      sprite.width = bakeTamanho;
+      sprite.height = bakeTamanho;
+      (mesh as any)._planetShader = undefined;
+      mesh.destroy();
+      return sprite as any;
+    } catch (err) {
+      console.warn('[planeta-procedural] star bake failed, using live shader:', err);
+    }
+  }
 
   return mesh;
 }
