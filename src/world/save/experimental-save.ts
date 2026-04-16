@@ -92,6 +92,10 @@ export class ExperimentalBackend implements StorageBackend {
         value: { mundoNome: dto.nome, id: n.id, data: n },
       })),
     ];
+    // Clear stale entities first — if the world previously had more
+    // naves/planetas than it does now, orphans would persist and be
+    // loaded back on the next carregar.
+    await deleteByMundo(dto.nome);
     await putMany(writes);
   }
 
