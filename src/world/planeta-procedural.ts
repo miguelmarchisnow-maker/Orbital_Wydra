@@ -4,7 +4,7 @@ import vertexSrc from '../shaders/planeta.vert?raw';
 import fragmentSrc from '../shaders/planeta.frag?raw';
 import wgslSrc from '../shaders/planeta.wgsl?raw';
 import { TIPO_PLANETA } from './planeta';
-import { getConfig } from '../core/config';
+import { getConfig, onConfigChange } from '../core/config';
 
 let _appRef: Application | null = null;
 
@@ -314,9 +314,13 @@ export function criarPlanetaProceduralSprite(
   return mesh;
 }
 
+// Cached shaderLive flag — updated by config observer, avoids deepClone per frame
+let _shaderLive = true;
+onConfigChange((cfg) => { _shaderLive = cfg.graphics.shaderLive; });
+
 export function atualizarTempoPlanetas(planetas: any[], deltaMs: number): void {
-  // When shaderLive is off, freeze all shader animations (no reload needed)
-  if (!getConfig().graphics.shaderLive) return;
+  // When shaderLive is off, freeze all shader animations instantly
+  if (!_shaderLive) return;
   const deltaSec = deltaMs / 1000;
   for (const planeta of planetas) {
     // Only update uniforms for visible planets (off-screen ones are skipped)
