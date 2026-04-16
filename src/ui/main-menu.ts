@@ -171,8 +171,8 @@ function injectStyles(): void {
     /* ── Back button + section titles for sub-screens ── */
     .menu-back {
       position: absolute;
-      top: var(--hud-margin);
-      left: var(--hud-margin);
+      top: calc(var(--hud-margin) * 0.5);
+      left: calc(var(--hud-margin) * 0.5);
       font-family: var(--hud-font);
       font-size: var(--hud-text-sm);
       letter-spacing: 0.1em;
@@ -512,7 +512,6 @@ export function criarMainMenu(options: MainMenuOptions): HTMLDivElement {
     showMainScreen();
   });
   _backBtn = back;
-  container.appendChild(back);
 
   // Screens (wrapped for slide transitions)
   _mainScreen = buildMainScreen();
@@ -520,7 +519,7 @@ export function criarMainMenu(options: MainMenuOptions): HTMLDivElement {
   _settingsScreen = buildSettingsScreen();
   const screensWrapper = document.createElement('div');
   screensWrapper.style.cssText = 'position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center;';
-  screensWrapper.append(_mainScreen, _savesScreen, _settingsScreen);
+  screensWrapper.append(back, _mainScreen, _savesScreen, _settingsScreen);
   container.appendChild(screensWrapper);
 
   // Footer

@@ -215,12 +215,17 @@ function criarSelect(
     dropdown.classList.toggle('open');
   });
 
-  // Close on outside click
-  document.addEventListener('click', () => {
-    dropdown.classList.remove('open');
-  });
-
   return wrapper;
+}
+
+// Single shared listener to close all open custom selects on outside click.
+let _selectCloseListenerInstalled = false;
+function instalarSelectCloseListener(): void {
+  if (_selectCloseListenerInstalled) return;
+  _selectCloseListenerInstalled = true;
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.settings-select-dropdown.open').forEach(d => d.classList.remove('open'));
+  });
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────
@@ -228,6 +233,7 @@ function criarSelect(
 function injectStyles(): void {
   if (_styleInjected) return;
   _styleInjected = true;
+  instalarSelectCloseListener();
   const s = document.createElement('style');
   s.textContent = `
     @keyframes settings-backdrop-in {
@@ -269,7 +275,11 @@ function injectStyles(): void {
     .settings-tabs { display: flex; gap: calc(var(--hud-unit) * 0.3); margin-bottom: calc(var(--hud-unit) * 1); border-bottom: 1px solid var(--hud-border); }
     .settings-tab { background: transparent; border: 1px solid var(--hud-border); border-bottom: none; color: var(--hud-text-dim); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.8); letter-spacing: 0.1em; text-transform: uppercase; padding: calc(var(--hud-unit) * 0.5) calc(var(--hud-unit) * 1); cursor: pointer; }
     .settings-tab.active { background: rgba(255,255,255,0.08); color: var(--hud-text); }
-    .settings-body { min-height: calc(var(--hud-unit) * 10); }
+    @keyframes settings-tab-in {
+      from { opacity: 0; transform: translateX(calc(var(--hud-unit) * 0.5)); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .settings-body { min-height: calc(var(--hud-unit) * 10); animation: settings-tab-in 180ms ease-out; }
     .settings-row { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--hud-unit) * 1); padding: calc(var(--hud-unit) * 0.5) 0; }
     .settings-row label { font-size: calc(var(--hud-unit) * 0.85); color: var(--hud-text); flex: 1; display: flex; align-items: center; }
     .settings-row input[type="range"] {
@@ -302,8 +312,17 @@ function injectStyles(): void {
     }
     .settings-row input[type="checkbox"] { width: calc(var(--hud-unit) * 1); height: calc(var(--hud-unit) * 1); }
     .settings-row .value-display { min-width: calc(var(--hud-unit) * 2.5); text-align: right; font-family: monospace; font-size: calc(var(--hud-unit) * 0.75); color: var(--hud-text-dim); }
-    .settings-row .mute-btn { background: transparent; border: 1px solid var(--hud-border); color: var(--hud-text); cursor: pointer; padding: 0 calc(var(--hud-unit) * 0.5); width: calc(var(--hud-unit) * 1.6); }
-    .settings-row .mute-btn.muted { color: #ff6b6b; border-color: #ff6b6b; }
+    .settings-row .mute-btn {
+      background: transparent; border: 1px solid var(--hud-border); color: var(--hud-text);
+      cursor: pointer; padding: calc(var(--hud-unit) * 0.2) calc(var(--hud-unit) * 0.4);
+      width: calc(var(--hud-unit) * 2); height: calc(var(--hud-unit) * 1.4);
+      font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.6);
+      letter-spacing: 0.05em; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+    .settings-row .mute-btn:hover { background: rgba(255,255,255,0.06); }
+    .settings-row .mute-btn.muted { color: #ff6b6b; border-color: #ff6b6b; background: rgba(255,100,100,0.08); }
     .settings-section { font-family: var(--hud-font-display); font-size: calc(var(--hud-unit) * 0.75); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hud-text-dim); margin: calc(var(--hud-unit) * 1.2) 0 calc(var(--hud-unit) * 0.4); padding-top: calc(var(--hud-unit) * 0.4); border-top: 1px solid var(--hud-border); }
     .settings-reload-banner { margin-top: calc(var(--hud-unit) * 0.3); padding: calc(var(--hud-unit) * 0.4); background: rgba(255,107,107,0.1); border: 1px solid #ff6b6b; color: #ff6b6b; font-size: calc(var(--hud-unit) * 0.7); display: flex; justify-content: space-between; align-items: center; }
     .settings-reload-banner button { background: #ff6b6b; border: none; color: #000; padding: calc(var(--hud-unit) * 0.2) calc(var(--hud-unit) * 0.6); cursor: pointer; font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.7); }
@@ -411,6 +430,9 @@ export function renderSettingsInto(host: HTMLDivElement): void {
 
   function refreshBody(): void {
     body.replaceChildren();
+    body.style.animation = 'none';
+    void body.offsetHeight;
+    body.style.animation = '';
     tabsEl.querySelectorAll('.settings-tab').forEach((b, i) => {
       b.classList.toggle('active', tabs[i][0] === _currentTab);
     });
@@ -498,6 +520,9 @@ export function abrirSettings(): void {
 
   function refreshBody(): void {
     body.replaceChildren();
+    body.style.animation = 'none';
+    void body.offsetHeight;
+    body.style.animation = '';
     tabsEl.querySelectorAll('.settings-tab').forEach((b, i) => {
       b.classList.toggle('active', tabs[i][0] === _currentTab);
     });
@@ -528,7 +553,8 @@ export function fecharSettings(): void {
     window.removeEventListener('keydown', _escListener);
     _escListener = null;
   }
-  _refreshBody = null;
+  // Only null _refreshBody if it was set by the overlay, not by renderSettingsInto
+  if (_overlay) _refreshBody = null;
   if (!_overlay) return;
   const ov = _overlay;
   ov.classList.add('closing');
@@ -582,7 +608,7 @@ function renderAudioTab(body: HTMLDivElement): void {
 
     const muteBtn = document.createElement('button');
     muteBtn.className = 'mute-btn';
-    muteBtn.textContent = cfg.audio[key].muted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+    muteBtn.textContent = cfg.audio[key].muted ? 'MUTE' : 'ON';
     if (cfg.audio[key].muted) muteBtn.classList.add('muted');
     muteBtn.addEventListener('click', () => {
       const current = getConfig();
@@ -593,7 +619,7 @@ function renderAudioTab(body: HTMLDivElement): void {
           [key]: { ...current.audio[key], muted: newMuted },
         },
       });
-      muteBtn.textContent = newMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+      muteBtn.textContent = newMuted ? 'MUTE' : 'ON';
       muteBtn.classList.toggle('muted', newMuted);
     });
     row.appendChild(muteBtn);
