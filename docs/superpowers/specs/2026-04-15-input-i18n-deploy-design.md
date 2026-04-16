@@ -97,8 +97,8 @@ Isso cobre os 3 sites migrados (player.ts Escape, main.ts Escape, debug-menu.ts 
 
 | ID | Label | Default key(s) | Notas |
 |----|-------|----------------|-------|
-| `toggle_debug_fast` | Debug menu rápido | `F1` | Migração de `debug-menu.ts:714` (`toggleFastMenu`) |
-| `toggle_debug_full` | Debug menu completo | `F3` | Migração de `debug-menu.ts:717` (`togglePopup`) |
+| `toggle_debug_fast` | Debug rápido | `F1` | Migração de `debug-menu.ts:714` (`toggleFastMenu`) |
+| `toggle_debug_full` | Debug completo | `F3` | Migração de `debug-menu.ts:717` (`togglePopup`) |
 
 **Nota sobre `e.key` vs `e.code`**: os listeners atuais usam `e.key` (ex: `'+', '=', '-', '_'`, `'Escape'`, `'F1'`). O dispatcher usa `e.code` (ex: `Equal`, `Minus`, `Escape`, `F1`). Diferença: `e.key` varia com layout/shift (Shift+Minus = `'_'`), `e.code` é posição física. Migrar pra `e.code` perde a detecção de `'+'` via Shift+Equal e `'_'` via Shift+Minus. **Decisão**: aceitável — o usuário pode pressionar `Equal` sem Shift e o zoom funciona. Se quiser o comportamento antigo, pode rebindar pra teclas adicionais. Documentar como mudança de comportamento menor.
 
@@ -255,7 +255,7 @@ onAction('cancel_or_menu', () => {
 });
 ```
 
-**`player.ts:346`** — deleta o listener de Escape que cancela `comandoNave`. A lógica de cancelamento é absorvida pelo callback de `cancel_command` acima — `player.ts` expõe `cancelarComandoNaveSeAtivo(): boolean` que tenta cancelar e retorna `true` se havia comando ativo.
+**`player.ts:346`** — deleta o listener de Escape que cancela `comandoNave`. A lógica de cancelamento é absorvida pelo callback de `cancel_or_menu` acima — `player.ts` expõe `cancelarComandoNaveSeAtivo(): boolean` que tenta cancelar e retorna `true` se havia comando ativo.
 
 **`debug-menu.ts:710`** — deleta o listener de F1/F3/Escape. Substitui por:
 
@@ -265,7 +265,7 @@ onAction('toggle_debug_full', () => {
   togglePopup();
   if (_popupVisible) toggleFastMenu(false);
 });
-// O Escape do debug menu é coberto pelo cancel_command global
+// O Escape do debug menu é coberto pelo cancel_or_menu global
 // que pode ser estendido pra fechar overlays abertos.
 ```
 
@@ -350,7 +350,7 @@ Câmera
   Câmera direita       [ D / → ]      [Rebind]
 
 Interface
-  Fechar painel        [ Esc ]        [Rebind]
+  Cancelar / Menu      [ Esc ]        [Rebind]
   Salvar rápido        [ F5 ]         [Rebind]
 
 Jogo
@@ -410,8 +410,8 @@ src/core/input/__tests__/dispatcher.test.ts
 ```
 src/core/config.ts          # adiciona input.bindings ao shape + defaults
 src/main.ts                 # deleta listener de zoom, usa onAction
-src/core/player.ts          # deleta listener de pan/Escape, usa onAction + onActionUp
-src/ui/debug-menu.ts        # deleta listener de backtick, usa onAction
+src/core/player.ts          # deleta listener de Escape, expõe cancelarComandoNaveSeAtivo()
+src/ui/debug-menu.ts        # deleta listener de F1/F3/Escape, expõe fecharDebugOverlays()
 src/ui/settings-panel.ts    # adiciona seção Controles na aba Jogabilidade
 ```
 
