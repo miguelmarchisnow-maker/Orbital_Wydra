@@ -18,6 +18,7 @@ import { criarColonizerPanel, atualizarColonizerPanel } from './ui/colonizer-pan
 import { criarColonyModal, atualizarColonyModal } from './ui/colony-modal';
 import { criarConfirmDialog } from './ui/confirm-dialog';
 import { criarMainMenu, esconderMainMenu, mostrarMainMenu } from './ui/main-menu';
+import { abrirPauseMenu, isPauseMenuOpen } from './ui/pause-menu';
 import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, lerEMigrar, recuperarEmergency, salvarAgora, getBackendAtivo, getUltimoErro } from './world/save';
 import type { MundoDTO } from './world/save';
 import { toast } from './ui/toast';
@@ -76,6 +77,11 @@ async function bootstrap(): Promise<void> {
   window.addEventListener('keydown', (e) => {
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    if (e.key === 'Escape' && _gameStarted && !isPauseMenuOpen()) {
+      e.preventDefault();
+      abrirPauseMenu();
+      return;
+    }
     if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
     else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomOut(); }
   });

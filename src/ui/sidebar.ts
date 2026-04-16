@@ -1,6 +1,5 @@
 import { registerSidebar, unregisterSidebar, onLayoutChange } from './hud-layout';
-import { salvarAgora, pararAutosave, getUltimoErro } from '../world/save';
-import { toast } from './toast';
+import { abrirPauseMenu } from './pause-menu';
 
 const SPRITE_SRC_SIZE = 32;
 const SPRITESHEET = 'assets/hud-icons.png';
@@ -202,39 +201,16 @@ export function criarSidebar(): HTMLDivElement {
     sidebar.appendChild(createNavButton(item));
   }
 
-  // ── Save / Menu buttons ──
-  const sep = document.createElement('hr');
-  sep.className = 'sidebar-separator';
-  sidebar.appendChild(sep);
-
-  const btnSalvar = document.createElement('button');
-  btnSalvar.type = 'button';
-  btnSalvar.className = 'sidebar-btn sidebar-btn-text';
-  btnSalvar.textContent = 'Salvar';
-  btnSalvar.addEventListener('click', (e) => {
+  // ── Menu button ──
+  const btnMenuOpen = document.createElement('button');
+  btnMenuOpen.type = 'button';
+  btnMenuOpen.className = 'sidebar-btn sidebar-btn-text';
+  btnMenuOpen.textContent = 'MENU';
+  btnMenuOpen.addEventListener('click', (e) => {
     e.preventDefault();
-    salvarAgora();
-    const erro = getUltimoErro();
-    if (erro) {
-      toast(`Erro ao salvar: ${erro.message}`, 'err');
-    } else {
-      toast('Salvo', 'info');
-    }
+    abrirPauseMenu();
   });
-  sidebar.appendChild(btnSalvar);
-
-  const btnMenu = document.createElement('button');
-  btnMenu.type = 'button';
-  btnMenu.className = 'sidebar-btn sidebar-btn-text';
-  btnMenu.textContent = 'Voltar ao Menu';
-  btnMenu.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (!confirm('Voltar ao menu? Seu progresso será salvo automaticamente.')) return;
-    salvarAgora();
-    pararAutosave();
-    window.dispatchEvent(new CustomEvent('orbital:voltar-ao-menu'));
-  });
-  sidebar.appendChild(btnMenu);
+  sidebar.appendChild(btnMenuOpen);
 
   _container = sidebar;
   document.body.appendChild(sidebar);
