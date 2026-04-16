@@ -171,8 +171,8 @@ function injectStyles(): void {
     /* ── Back button + section titles for sub-screens ── */
     .menu-back {
       position: absolute;
-      top: calc(var(--hud-margin) * 0.5);
-      left: calc(var(--hud-margin) * 0.5);
+      top: calc(var(--hud-unit) * -2.5);
+      left: 0;
       font-family: var(--hud-font);
       font-size: var(--hud-text-sm);
       letter-spacing: 0.1em;

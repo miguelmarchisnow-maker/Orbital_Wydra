@@ -2,6 +2,7 @@ import { salvarAgora, pararAutosave, getUltimoErro } from '../world/save';
 import { toast } from './toast';
 import { marcarInteracaoUi } from './interacao-ui';
 import { getConfig } from '../core/config';
+import { abrirSettings } from './settings-panel';
 
 let _container: HTMLDivElement | null = null;
 let _styleInjected = false;
@@ -161,6 +162,12 @@ export function abrirPauseMenu(): void {
     }
   });
   card.appendChild(btnSave);
+
+  const btnConfig = criarBotao('Configurações', () => {
+    fecharPauseMenu();
+    abrirSettings();
+  });
+  card.appendChild(btnConfig);
 
   card.appendChild(criarSeparador());
 
