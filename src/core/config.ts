@@ -72,14 +72,42 @@ const STORAGE_KEY = 'orbital_config';
 
 let _cache: OrbitalConfig | null = null;
 
+function deepClone<T>(x: T): T {
+  return JSON.parse(JSON.stringify(x));
+}
+
+function mergeDeep<T>(base: T, over: any): T {
+  const out: any = Array.isArray(base) ? [...(base as any)] : { ...base };
+  if (!over || typeof over !== 'object') return out;
+  for (const k in over) {
+    const v = over[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = mergeDeep((base as any)?.[k] ?? {}, v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function migrarChavesLegadas(cfg: OrbitalConfig): void {
+  const legacyRenderer = localStorage.getItem('renderer');
+  if (legacyRenderer === 'webgl' || legacyRenderer === 'webgpu') {
+    cfg.graphics.renderer = legacyRenderer;
+    localStorage.removeItem('renderer');
+  }
+}
+
 function load(): OrbitalConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULTS };
+    if (!raw) return deepClone(DEFAULTS);
     const parsed = JSON.parse(raw);
-    return { ...DEFAULTS, ...parsed };
+    const merged = mergeDeep(DEFAULTS, parsed);
+    migrarChavesLegadas(merged);
+    return merged;
   } catch {
-    return { ...DEFAULTS };
+    return deepClone(DEFAULTS);
   }
 }
 
@@ -88,12 +116,21 @@ export function getConfig(): OrbitalConfig {
   return { ..._cache };
 }
 
-export function setConfig(partial: Partial<OrbitalConfig>): void {
-  _cache = { ...getConfig(), ...partial };
+export function setConfig(partial: DeepPartial<OrbitalConfig>): void {
+  _cache = mergeDeep(getConfig(), partial);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache));
   } catch {
     /* quota exhausted */
+  }
+}
+
+export function setConfigDuranteBoot(partial: DeepPartial<OrbitalConfig>): void {
+  _cache = mergeDeep(getConfig(), partial);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache));
+  } catch (err) {
+    console.warn('[config] boot persist failed:', err);
   }
 }
 
