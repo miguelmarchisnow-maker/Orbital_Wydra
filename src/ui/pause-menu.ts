@@ -184,25 +184,22 @@ export function abrirPauseMenu(): void {
     const btnConfirm = criarBotao('Sair', () => {
       salvarAgora();
       pararAutosave();
-      // Fade to black before reload for a smooth transition
+      // Animate card out, then dispatch event for seamless teardown
       if (_container) {
         const c = _container;
-        c.style.transition = 'background 400ms ease-out, backdrop-filter 400ms ease-out';
-        c.style.background = 'rgba(0, 0, 0, 1)';
         const cardEl = c.querySelector('.pm-card') as HTMLElement | null;
         if (cardEl) {
-          cardEl.style.transition = 'opacity 250ms ease-out, transform 300ms ease-out';
+          cardEl.style.transition = 'opacity 200ms ease-out, transform 240ms ease-out';
           cardEl.style.opacity = '0';
-          cardEl.style.transform = 'translateY(calc(var(--hud-unit) * -0.5)) scale(0.97)';
+          cardEl.style.transform = 'translateY(calc(var(--hud-unit) * -0.4)) scale(0.97)';
         }
+        c.style.transition = 'opacity 350ms ease-out';
+        setTimeout(() => { c.style.opacity = '0'; }, 100);
         setTimeout(() => {
-          // Set body background black so the unload→reload doesn't flash white
-          document.body.style.background = '#000';
-          // Remove the canvas to prevent a white frame during unload
-          const canvas = document.querySelector('canvas');
-          if (canvas) canvas.style.display = 'none';
+          c.remove();
+          _container = null;
           window.dispatchEvent(new CustomEvent('orbital:voltar-ao-menu'));
-        }, 420);
+        }, 400);
       } else {
         window.dispatchEvent(new CustomEvent('orbital:voltar-ao-menu'));
       }

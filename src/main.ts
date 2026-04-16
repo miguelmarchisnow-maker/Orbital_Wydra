@@ -1,22 +1,22 @@
 import { Application } from 'pixi.js';
 import type { Mundo, TipoJogador } from './types';
-import { criarMundo, atualizarMundo, getEstadoJogo } from './world/mundo';
+import { criarMundo, atualizarMundo, getEstadoJogo, destruirMundo } from './world/mundo';
 import { criarMundoMenu, atualizarMundoMenu, destruirMundoMenu, type MundoMenu } from './world/mundo-menu';
 import { configurarCamera, atualizarCamera, getCamera, setCameraPos, setTipoJogador, zoomIn, zoomOut, setZoom } from './core/player';
-import { criarSidebar } from './ui/sidebar';
-import { criarEmpireBadge } from './ui/empire-badge';
-import { criarChatLog } from './ui/chat-log';
-import { criarResourceBar } from './ui/resource-bar';
-import { criarCreditsBar } from './ui/credits-bar';
-import { criarMinimap, atualizarMinimap, onMinimapClick, onMinimapZoomIn, onMinimapZoomOut } from './ui/minimap';
-import { criarDebugMenu, atualizarDebugMenu, getDebugState, getCheats } from './ui/debug-menu';
+import { criarSidebar, destruirSidebar } from './ui/sidebar';
+import { criarEmpireBadge, destruirEmpireBadge } from './ui/empire-badge';
+import { criarChatLog, destruirChatLog } from './ui/chat-log';
+import { criarResourceBar, destruirResourceBar } from './ui/resource-bar';
+import { criarCreditsBar, destruirCreditsBar } from './ui/credits-bar';
+import { criarMinimap, atualizarMinimap, onMinimapClick, onMinimapZoomIn, onMinimapZoomOut, destruirMinimap } from './ui/minimap';
+import { criarDebugMenu, atualizarDebugMenu, getDebugState, getCheats, destruirDebugMenu } from './ui/debug-menu';
 import { installRootVariables } from './ui/hud-layout';
-import { criarPlanetPanel, atualizarPlanetPanel } from './ui/planet-panel';
-import { criarBuildPanel, atualizarBuildPanel } from './ui/build-panel';
-import { criarShipPanel, atualizarShipPanel } from './ui/ship-panel';
-import { criarColonizerPanel, atualizarColonizerPanel } from './ui/colonizer-panel';
-import { criarColonyModal, atualizarColonyModal } from './ui/colony-modal';
-import { criarConfirmDialog } from './ui/confirm-dialog';
+import { criarPlanetPanel, atualizarPlanetPanel, destruirPlanetPanel } from './ui/planet-panel';
+import { criarBuildPanel, atualizarBuildPanel, destruirBuildPanel } from './ui/build-panel';
+import { criarShipPanel, atualizarShipPanel, destruirShipPanel } from './ui/ship-panel';
+import { criarColonizerPanel, atualizarColonizerPanel, destruirColonizerPanel } from './ui/colonizer-panel';
+import { criarColonyModal, atualizarColonyModal, destruirColonyModal } from './ui/colony-modal';
+import { criarConfirmDialog, destruirConfirmDialog } from './ui/confirm-dialog';
 import { criarMainMenu, esconderMainMenu, mostrarMainMenu } from './ui/main-menu';
 import { abrirPauseMenu, isPauseMenuOpen } from './ui/pause-menu';
 import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, lerEMigrar, recuperarEmergency, salvarAgora, getBackendAtivo, getUltimoErro } from './world/save';
@@ -107,7 +107,7 @@ async function bootstrap(): Promise<void> {
   instalarListenersCicloDeVida();
 
   window.addEventListener('orbital:voltar-ao-menu', () => {
-    window.location.reload();
+    void voltarAoMenu();
   });
 }
 
@@ -354,6 +354,56 @@ async function carregarMundo(nome: string): Promise<void> {
     mostrarMainMenu();
     mostrarModalSaveCorrompido(nome, err);
   }
+}
+
+async function voltarAoMenu(): Promise<void> {
+  if (!_app) return;
+  const app = _app;
+
+  // 1. Tear down game world
+  if (_mundo) {
+    destruirMundo(_mundo, app);
+    _mundo = null;
+  }
+
+  // 2. Tear down all HUD panels
+  if (_hudInstalled) {
+    destruirSidebar();
+    destruirEmpireBadge();
+    destruirCreditsBar();
+    destruirResourceBar();
+    destruirChatLog();
+    destruirPlanetPanel();
+    destruirBuildPanel();
+    destruirShipPanel();
+    destruirColonizerPanel();
+    destruirColonyModal();
+    destruirConfirmDialog();
+    destruirMinimap();
+    destruirDebugMenu();
+    _hudInstalled = false;
+  }
+
+  // Remove error banner if present
+  if (_bannerEl) {
+    _bannerEl.remove();
+    _bannerEl = null;
+    _bannerLastErr = null;
+  }
+
+  _gameStarted = false;
+  _transitioning = false;
+
+  // 3. Recreate menu background world
+  const mundoMenu = await criarMundoMenu(app);
+  app.stage.addChild(mundoMenu.container);
+  _mundoMenu = mundoMenu;
+  setCameraPos(mundoMenu.sistema.sol.x, mundoMenu.sistema.sol.y);
+  setZoom(0.55);
+  _cinematicTime = 0;
+
+  // 4. Show main menu with fade-in
+  mostrarMainMenu();
 }
 
 void bootstrap();
