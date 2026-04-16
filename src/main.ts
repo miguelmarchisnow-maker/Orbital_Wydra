@@ -18,7 +18,8 @@ import { criarColonizerPanel, atualizarColonizerPanel } from './ui/colonizer-pan
 import { criarColonyModal, atualizarColonyModal } from './ui/colony-modal';
 import { criarConfirmDialog } from './ui/confirm-dialog';
 import { criarMainMenu, esconderMainMenu, mostrarMainMenu } from './ui/main-menu';
-import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, lerEMigrar, salvarAgora } from './world/save';
+import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, lerEMigrar, salvarAgora, getBackendAtivo, getUltimoErro } from './world/save';
+import { toast } from './ui/toast';
 import { abrirNewWorldModal } from './ui/new-world-modal';
 import { criarLoadingScreen, mostrarCarregando, esconderCarregando } from './ui/loading-screen';
 import { somVitoria, somDerrota } from './audio/som';
@@ -168,6 +169,7 @@ function startTicker(): void {
     atualizarColonizerPanel(mundo);
     atualizarColonyModal(mundo);
     atualizarDebugMenu();
+    atualizarHudBannerErro();
 
     const estado = getEstadoJogo();
     if (estado === 'vitoria' && !fimTocado) {
@@ -241,6 +243,64 @@ async function iniciarJogoNovo(nome: string, tipoJogador: TipoJogador): Promise<
   await entrarNoJogo(mundo, nome, Date.now(), 0);
 }
 
+function mostrarModalSaveCorrompido(nome: string, err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error('[save] load failed:', err);
+  const action = prompt(
+    `Não foi possível carregar "${nome}".\n\nErro: ${msg}\n\nDigite APAGAR pra remover o save, ou EXPORTAR pra baixar o JSON cru.`,
+    '',
+  );
+  if (action === 'APAGAR') {
+    void getBackendAtivo().apagar(nome);
+    toast('Save apagado', 'info');
+  } else if (action === 'EXPORTAR') {
+    try {
+      const backend = getBackendAtivo();
+      const rawResult = backend.carregar(nome);
+      const raw = rawResult instanceof Promise ? null : rawResult;
+      if (!raw) return;
+      const blob = new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${nome}-corrupt.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast('Falha ao exportar', 'err');
+    }
+  }
+}
+
+let _bannerEl: HTMLDivElement | null = null;
+function atualizarHudBannerErro(): void {
+  const err = getUltimoErro();
+  if (!_bannerEl) {
+    _bannerEl = document.createElement('div');
+    _bannerEl.style.cssText = `
+      position: fixed;
+      top: var(--hud-margin);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 107, 107, 0.15);
+      border: 1px solid #ff6b6b;
+      color: #ff6b6b;
+      padding: calc(var(--hud-unit) * 0.5) calc(var(--hud-unit) * 1);
+      font-family: var(--hud-font);
+      font-size: calc(var(--hud-unit) * 0.85);
+      z-index: 400;
+      display: none;
+    `;
+    document.body.appendChild(_bannerEl);
+  }
+  if (err) {
+    _bannerEl.textContent = `Falha ao salvar: ${err.message}`;
+    _bannerEl.style.display = '';
+  } else {
+    _bannerEl.style.display = 'none';
+  }
+}
+
 async function carregarMundo(nome: string): Promise<void> {
   if (!_app || _gameStarted || _transitioning) return;
   _transitioning = true;
@@ -257,14 +317,14 @@ async function carregarMundo(nome: string): Promise<void> {
     _transitioning = false;
     await esconderCarregando();
     mostrarMainMenu();
-    alert(`Erro ao carregar "${nome}": ${err instanceof Error ? err.message : err}`);
+    mostrarModalSaveCorrompido(nome, err);
     return;
   }
   if (!dto) {
     _transitioning = false;
     await esconderCarregando();
     mostrarMainMenu();
-    alert(`Não foi possível carregar o mundo "${nome}".`);
+    mostrarModalSaveCorrompido(nome, new Error('Save não encontrado ou vazio'));
     return;
   }
 
@@ -276,7 +336,7 @@ async function carregarMundo(nome: string): Promise<void> {
     _transitioning = false;
     await esconderCarregando();
     mostrarMainMenu();
-    alert(`Erro ao reconstruir "${nome}": ${err instanceof Error ? err.message : err}`);
+    mostrarModalSaveCorrompido(nome, err);
   }
 }
 
