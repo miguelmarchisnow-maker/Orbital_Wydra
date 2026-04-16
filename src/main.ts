@@ -359,17 +359,30 @@ async function voltarAoMenu(): Promise<void> {
   if (!_app) return;
   const app = _app;
 
-  // 1. Tear down camera listeners (must happen before mundo is destroyed
-  // since listeners close over the mundo reference)
+  // 1. Black overlay covers everything during teardown so the user
+  //    sees a smooth fade instead of a frame of destroyed content.
+  const curtain = document.createElement('div');
+  curtain.style.cssText = `
+    position: fixed; inset: 0; z-index: 999;
+    background: #000; opacity: 0;
+    transition: opacity 400ms ease-out;
+  `;
+  document.body.appendChild(curtain);
+  // Fade to black (400ms)
+  requestAnimationFrame(() => { curtain.style.opacity = '1'; });
+  await new Promise<void>((r) => setTimeout(r, 420));
+
+  // 2. Tear down camera listeners (must happen before mundo is destroyed
+  //    since listeners close over the mundo reference)
   destruirCamera();
 
-  // 2. Tear down game world
+  // 3. Tear down game world
   if (_mundo) {
     destruirMundo(_mundo, app);
     _mundo = null;
   }
 
-  // 2. Tear down all HUD panels
+  // 4. Tear down all HUD panels
   if (_hudInstalled) {
     destruirSidebar();
     destruirEmpireBadge();
@@ -398,7 +411,7 @@ async function voltarAoMenu(): Promise<void> {
   _transitioning = false;
   _fimTocado = false;
 
-  // 3. Recreate menu background world
+  // 5. Recreate menu background world (behind the curtain)
   const mundoMenu = await criarMundoMenu(app);
   app.stage.addChild(mundoMenu.container);
   _mundoMenu = mundoMenu;
@@ -406,8 +419,12 @@ async function voltarAoMenu(): Promise<void> {
   setZoom(0.55);
   _cinematicTime = 0;
 
-  // 4. Show main menu with fade-in
+  // 6. Show main menu, then fade out the curtain to reveal it
   mostrarMainMenu();
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  curtain.style.transition = 'opacity 400ms ease-out';
+  curtain.style.opacity = '0';
+  setTimeout(() => curtain.remove(), 420);
 }
 
 void bootstrap();
