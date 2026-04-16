@@ -255,17 +255,21 @@ function mostrarModalSaveCorrompido(nome: string, err: unknown): void {
     toast('Save apagado', 'info');
   } else if (action === 'EXPORTAR') {
     try {
-      const backend = getBackendAtivo();
-      const rawResult = backend.carregar(nome);
-      const raw = rawResult instanceof Promise ? null : rawResult;
-      if (!raw) return;
-      const blob = new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' });
+      // Read raw string directly — carregar() swallows parse errors,
+      // which defeats the purpose of exporting corrupt data.
+      const rawStr = localStorage.getItem(`orbital_save:${nome}`);
+      if (!rawStr) {
+        toast('Nada para exportar', 'err');
+        return;
+      }
+      const blob = new Blob([rawStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${nome}-corrupt.json`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      toast('Save exportado', 'info');
     } catch (e) {
       toast('Falha ao exportar', 'err');
     }
@@ -273,8 +277,11 @@ function mostrarModalSaveCorrompido(nome: string, err: unknown): void {
 }
 
 let _bannerEl: HTMLDivElement | null = null;
+let _bannerLastErr: Error | null = null;
 function atualizarHudBannerErro(): void {
   const err = getUltimoErro();
+  if (err === _bannerLastErr) return;
+  _bannerLastErr = err;
   if (!_bannerEl) {
     _bannerEl = document.createElement('div');
     _bannerEl.style.cssText = `
@@ -284,6 +291,7 @@ function atualizarHudBannerErro(): void {
       transform: translateX(-50%);
       background: rgba(255, 107, 107, 0.15);
       border: 1px solid #ff6b6b;
+      border-radius: var(--hud-radius);
       color: #ff6b6b;
       padding: calc(var(--hud-unit) * 0.5) calc(var(--hud-unit) * 1);
       font-family: var(--hud-font);
@@ -324,7 +332,7 @@ async function carregarMundo(nome: string): Promise<void> {
     _transitioning = false;
     await esconderCarregando();
     mostrarMainMenu();
-    mostrarModalSaveCorrompido(nome, new Error('Save não encontrado ou vazio'));
+    toast(`Save "${nome}" não encontrado`, 'err');
     return;
   }
 
