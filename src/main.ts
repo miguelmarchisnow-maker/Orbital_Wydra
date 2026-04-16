@@ -138,13 +138,15 @@ async function bootstrap(): Promise<void> {
   const scanlinesEl = document.createElement('div');
   scanlinesEl.style.cssText = `
     position: fixed; inset: 0; z-index: 99; pointer-events: none;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.08) 2px,
-      rgba(0, 0, 0, 0.08) 4px
-    );
+    background:
+      repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 1px,
+        rgba(0, 0, 0, 0.12) 1px,
+        rgba(0, 0, 0, 0.12) 2px
+      ),
+      radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0,0,0,0.25) 100%);
     display: ${gfx.scanlines ? 'block' : 'none'};
   `;
   document.body.appendChild(scanlinesEl);

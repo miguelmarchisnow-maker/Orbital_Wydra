@@ -171,8 +171,8 @@ function injectStyles(): void {
     /* ── Back button + section titles for sub-screens ── */
     .menu-back {
       position: absolute;
-      top: calc(var(--hud-unit) * -2.5);
-      left: 0;
+      top: var(--hud-margin);
+      left: var(--hud-margin);
       font-family: var(--hud-font);
       font-size: var(--hud-text-sm);
       letter-spacing: 0.1em;
@@ -519,7 +519,8 @@ export function criarMainMenu(options: MainMenuOptions): HTMLDivElement {
   _settingsScreen = buildSettingsScreen();
   const screensWrapper = document.createElement('div');
   screensWrapper.style.cssText = 'position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center;';
-  screensWrapper.append(back, _mainScreen, _savesScreen, _settingsScreen);
+  screensWrapper.append(_mainScreen, _savesScreen, _settingsScreen);
+  container.appendChild(back);
   container.appendChild(screensWrapper);
 
   // Footer
