@@ -154,6 +154,8 @@ e o resultado \u00E9 guardado como textura fixa: mesmo
 visual, anima\u00E7\u00E3o congelada, desempenho muito maior.
 
 Requer recarregar o jogo.`,
+  autosave: `Intervalo de autosave\n\nCom que frequ\u00EAncia o jogo salva automaticamente.\n'Desligado' desativa o autosave \u2014 s\u00F3 salva manualmente.`,
+  saveMode: `Save experimental (IndexedDB)\n\nQuando ligado, salva em tempo real via IndexedDB\nem vez do m\u00E9todo padr\u00E3o por localStorage.\n\nMais r\u00E1pido e confi\u00E1vel para saves grandes.`,
   confirmar: `Confirmar a\u00E7\u00F5es destrutivas
 
 Mostra um di\u00E1logo de confirma\u00E7\u00E3o antes de a\u00E7\u00F5es
@@ -165,6 +167,62 @@ mouse fica perto das bordas da tela. Desliga se
 o cursor estiver sobre um painel de interface.`,
 };
 
+// ─── Custom select helper ────────────────────────────────────────────
+
+function criarSelect(
+  options: Array<[string, string]>,
+  currentValue: string,
+): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'settings-select';
+
+  const display = document.createElement('button');
+  display.className = 'settings-select-display';
+  const currentLabel = options.find(([v]) => v === currentValue)?.[1] ?? currentValue;
+  display.textContent = currentLabel + ' \u25BE';
+  wrapper.appendChild(display);
+
+  // Store the current value as a data attribute
+  wrapper.dataset.value = currentValue;
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'settings-select-dropdown';
+
+  for (const [value, label] of options) {
+    const opt = document.createElement('button');
+    opt.className = 'settings-select-option';
+    if (value === currentValue) opt.classList.add('active');
+    opt.textContent = label;
+    opt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      wrapper.dataset.value = value;
+      display.textContent = label + ' \u25BE';
+      dropdown.querySelectorAll('.settings-select-option').forEach(o => o.classList.remove('active'));
+      opt.classList.add('active');
+      dropdown.classList.remove('open');
+      wrapper.dispatchEvent(new Event('change'));
+    });
+    dropdown.appendChild(opt);
+  }
+  wrapper.appendChild(dropdown);
+
+  display.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close any other open dropdowns
+    document.querySelectorAll('.settings-select-dropdown.open').forEach(d => {
+      if (d !== dropdown) d.classList.remove('open');
+    });
+    dropdown.classList.toggle('open');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', () => {
+    dropdown.classList.remove('open');
+  });
+
+  return wrapper;
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────
 
 function injectStyles(): void {
@@ -172,11 +230,29 @@ function injectStyles(): void {
   _styleInjected = true;
   const s = document.createElement('style');
   s.textContent = `
+    @keyframes settings-backdrop-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes settings-card-in {
+      from { opacity: 0; transform: translateY(calc(var(--hud-unit) * 0.5)) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
     .settings-overlay {
       position: fixed; inset: 0; z-index: 650;
       background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
       display: flex; align-items: center; justify-content: center;
       font-family: var(--hud-font); color: var(--hud-text);
+      animation: settings-backdrop-in 200ms ease-out forwards;
+    }
+    .settings-overlay.closing {
+      opacity: 0;
+      transition: opacity 200ms ease-out;
+    }
+    .settings-overlay.closing .settings-card {
+      transform: translateY(calc(var(--hud-unit) * 0.3)) scale(0.98);
+      opacity: 0;
+      transition: opacity 150ms ease-out, transform 200ms ease-out;
     }
     .settings-card {
       background: var(--hud-bg); border: 1px solid var(--hud-border);
@@ -184,6 +260,7 @@ function injectStyles(): void {
       min-width: calc(var(--hud-unit) * 30);
       max-width: calc(var(--hud-unit) * 40);
       max-height: 80vh; overflow-y: auto;
+      animation: settings-card-in 240ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
     }
     .settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: calc(var(--hud-unit) * 1); }
     .settings-title { font-family: var(--hud-font-display); font-size: calc(var(--hud-unit) * 1.5); letter-spacing: 0.12em; text-transform: uppercase; margin: 0; }
@@ -197,7 +274,6 @@ function injectStyles(): void {
     .settings-row label { font-size: calc(var(--hud-unit) * 0.85); color: var(--hud-text); flex: 1; display: flex; align-items: center; }
     .settings-row input[type="range"] { flex: 1; max-width: calc(var(--hud-unit) * 10); }
     .settings-row input[type="checkbox"] { width: calc(var(--hud-unit) * 1); height: calc(var(--hud-unit) * 1); }
-    .settings-row select { background: rgba(0,0,0,0.4); color: var(--hud-text); border: 1px solid var(--hud-border); padding: calc(var(--hud-unit) * 0.3) calc(var(--hud-unit) * 0.5); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.8); }
     .settings-row .value-display { min-width: calc(var(--hud-unit) * 2.5); text-align: right; font-family: monospace; font-size: calc(var(--hud-unit) * 0.75); color: var(--hud-text-dim); }
     .settings-row .mute-btn { background: transparent; border: 1px solid var(--hud-border); color: var(--hud-text); cursor: pointer; padding: 0 calc(var(--hud-unit) * 0.5); width: calc(var(--hud-unit) * 1.6); }
     .settings-row .mute-btn.muted { color: #ff6b6b; border-color: #ff6b6b; }
@@ -207,6 +283,14 @@ function injectStyles(): void {
     .settings-footer { display: flex; gap: calc(var(--hud-unit) * 0.5); margin-top: calc(var(--hud-unit) * 1.5); padding-top: calc(var(--hud-unit) * 0.8); border-top: 1px solid var(--hud-border); }
     .settings-footer button { flex: 1; background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text-dim); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.75); padding: calc(var(--hud-unit) * 0.5); cursor: pointer; text-transform: uppercase; letter-spacing: 0.08em; }
     .settings-footer button:hover { color: var(--hud-text); border-color: var(--hud-text); }
+    .settings-select { position: relative; display: inline-block; }
+    .settings-select-display { background: rgba(0,0,0,0.4); color: var(--hud-text); border: 1px solid var(--hud-border); padding: calc(var(--hud-unit) * 0.3) calc(var(--hud-unit) * 0.8); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.8); cursor: pointer; min-width: calc(var(--hud-unit) * 8); text-align: left; transition: border-color 120ms ease; }
+    .settings-select-display:hover { border-color: var(--hud-text); }
+    .settings-select-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: rgba(10, 12, 18, 0.95); border: 1px solid var(--hud-border); border-top: none; z-index: 950; max-height: calc(var(--hud-unit) * 15); overflow-y: auto; }
+    .settings-select-dropdown.open { display: block; }
+    .settings-select-option { display: block; width: 100%; background: transparent; border: none; color: var(--hud-text-dim); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.8); padding: calc(var(--hud-unit) * 0.4) calc(var(--hud-unit) * 0.8); cursor: pointer; text-align: left; transition: background 100ms ease, color 100ms ease; }
+    .settings-select-option:hover { background: rgba(255,255,255,0.08); color: var(--hud-text); }
+    .settings-select-option.active { color: var(--hud-text); background: rgba(255,255,255,0.05); }
   `;
   document.head.appendChild(s);
 }
@@ -345,7 +429,12 @@ export function fecharSettings(): void {
     _escListener = null;
   }
   _refreshBody = null;
-  _overlay?.remove();
+  if (!_overlay) return;
+  const ov = _overlay;
+  ov.classList.add('closing');
+  setTimeout(() => {
+    ov.remove();
+  }, 250);
   _overlay = null;
 }
 
@@ -424,22 +513,14 @@ function renderGraphicsTab(body: HTMLDivElement): void {
   // Qualidade
   {
     const [row] = rowWithLabel('Qualidade', 'qualidade');
-    const select = document.createElement('select');
-    const opts: Array<[typeof gfx.qualidadeEfeitos, string]> = [
+    const select = criarSelect([
       ['alto', 'Alto'],
       ['medio', 'M\u00E9dio'],
       ['baixo', 'Baixo'],
       ['minimo', 'M\u00EDnimo'],
-    ];
-    for (const [val, label] of opts) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = label;
-      if (val === gfx.qualidadeEfeitos) opt.selected = true;
-      select.appendChild(opt);
-    }
+    ], gfx.qualidadeEfeitos);
     select.addEventListener('change', () => {
-      aplicarPreset(select.value as typeof gfx.qualidadeEfeitos);
+      aplicarPreset(select.dataset.value! as typeof gfx.qualidadeEfeitos);
       _refreshBody?.();
     });
     row.appendChild(select);
@@ -505,22 +586,14 @@ function renderGraphicsTab(body: HTMLDivElement): void {
   // FPS cap
   {
     const [row] = rowWithLabel('Limite de FPS', 'fpsCap');
-    const select = document.createElement('select');
-    const opts: Array<[number, string]> = [
-      [0, 'Sem limite'],
-      [30, '30'],
-      [60, '60'],
-      [120, '120'],
-    ];
-    for (const [val, label] of opts) {
-      const opt = document.createElement('option');
-      opt.value = String(val);
-      opt.textContent = label;
-      if (val === gfx.fpsCap) opt.selected = true;
-      select.appendChild(opt);
-    }
+    const select = criarSelect([
+      ['0', 'Sem limite'],
+      ['30', '30'],
+      ['60', '60'],
+      ['120', '120'],
+    ], String(gfx.fpsCap));
     select.addEventListener('change', () => {
-      setConfig({ graphics: { ...getConfig().graphics, fpsCap: Number(select.value) } });
+      setConfig({ graphics: { ...getConfig().graphics, fpsCap: Number(select.dataset.value!) } });
     });
     row.appendChild(select);
     body.appendChild(row);
@@ -545,16 +618,12 @@ function renderGraphicsTabMotor(body: HTMLDivElement): void {
   // Renderer
   {
     const [row] = rowWithLabel('Motor de renderiza\u00E7\u00E3o', 'renderer');
-    const select = document.createElement('select');
-    for (const [val, label] of [['webgl', 'WebGL'], ['webgpu', 'WebGPU']] as const) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = label;
-      if (val === gfx.renderer) opt.selected = true;
-      select.appendChild(opt);
-    }
+    const select = criarSelect([
+      ['webgl', 'WebGL'],
+      ['webgpu', 'WebGPU'],
+    ], gfx.renderer);
     select.addEventListener('change', () => {
-      setConfig({ graphics: { ...getConfig().graphics, renderer: select.value as 'webgl' | 'webgpu' } });
+      setConfig({ graphics: { ...getConfig().graphics, renderer: select.dataset.value! as 'webgl' | 'webgpu' } });
       showReloadBanner(row);
     });
     row.appendChild(select);
@@ -564,21 +633,13 @@ function renderGraphicsTabMotor(body: HTMLDivElement): void {
   // WebGL version (only if renderer=webgl)
   if (gfx.renderer === 'webgl') {
     const [row] = rowWithLabel('Vers\u00E3o do WebGL', 'webglVersion');
-    const select = document.createElement('select');
-    const opts: Array<[typeof gfx.webglVersion, string]> = [
+    const select = criarSelect([
       ['auto', 'Autom\u00E1tico'],
       ['2', 'WebGL 2 for\u00E7ado'],
       ['1', 'WebGL 1 for\u00E7ado'],
-    ];
-    for (const [val, label] of opts) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = label;
-      if (val === gfx.webglVersion) opt.selected = true;
-      select.appendChild(opt);
-    }
+    ], gfx.webglVersion);
     select.addEventListener('change', () => {
-      setConfig({ graphics: { ...getConfig().graphics, webglVersion: select.value as typeof gfx.webglVersion } });
+      setConfig({ graphics: { ...getConfig().graphics, webglVersion: select.dataset.value! as typeof gfx.webglVersion } });
       showReloadBanner(row);
     });
     row.appendChild(select);
@@ -588,21 +649,13 @@ function renderGraphicsTabMotor(body: HTMLDivElement): void {
   // GPU preference
   {
     const [row] = rowWithLabel('Prefer\u00EAncia de GPU', 'gpuPref');
-    const select = document.createElement('select');
-    const opts: Array<[typeof gfx.gpuPreference, string]> = [
+    const select = criarSelect([
       ['auto', 'Autom\u00E1tico'],
       ['high-performance', 'Alta performance'],
       ['low-power', 'Economia de energia'],
-    ];
-    for (const [val, label] of opts) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = label;
-      if (val === gfx.gpuPreference) opt.selected = true;
-      select.appendChild(opt);
-    }
+    ], gfx.gpuPreference);
     select.addEventListener('change', () => {
-      setConfig({ graphics: { ...getConfig().graphics, gpuPreference: select.value as typeof gfx.gpuPreference } });
+      setConfig({ graphics: { ...getConfig().graphics, gpuPreference: select.dataset.value! as typeof gfx.gpuPreference } });
       showReloadBanner(row);
     });
     row.appendChild(select);
@@ -678,24 +731,16 @@ function renderGraphicsTabAvancado(body: HTMLDivElement): void {
   // Max fantasmas
   {
     const [row] = rowWithLabel('Max fantasmas', 'fantasmas');
-    const select = document.createElement('select');
-    const opts: Array<[number, string]> = [
-      [-1, 'Ilimitado'],
-      [50, '50'],
-      [30, '30'],
-      [15, '15'],
-      [5, '5'],
-      [0, 'Desligado'],
-    ];
-    for (const [val, label] of opts) {
-      const opt = document.createElement('option');
-      opt.value = String(val);
-      opt.textContent = label;
-      if (val === gfx.maxFantasmas) opt.selected = true;
-      select.appendChild(opt);
-    }
+    const select = criarSelect([
+      ['-1', 'Ilimitado'],
+      ['50', '50'],
+      ['30', '30'],
+      ['15', '15'],
+      ['5', '5'],
+      ['0', 'Desligado'],
+    ], String(gfx.maxFantasmas));
     select.addEventListener('change', () => {
-      setConfig({ graphics: { ...getConfig().graphics, maxFantasmas: Number(select.value) } });
+      setConfig({ graphics: { ...getConfig().graphics, maxFantasmas: Number(select.dataset.value!) } });
     });
     row.appendChild(select);
     body.appendChild(row);
@@ -720,6 +765,40 @@ function renderGraphicsTabAvancado(body: HTMLDivElement): void {
 
 function renderGameplayTab(body: HTMLDivElement): void {
   const gp = getConfig().gameplay;
+
+  // Autosave
+  {
+    const [row] = rowWithLabel('Intervalo de autosave', 'autosave');
+    const select = criarSelect([
+      ['0', 'Desligado'],
+      ['30000', '30 segundos'],
+      ['60000', '1 minuto'],
+      ['120000', '2 minutos'],
+      ['300000', '5 minutos'],
+    ], String(getConfig().autosaveIntervalMs));
+    select.addEventListener('change', () => {
+      setConfig({ autosaveIntervalMs: Number(select.dataset.value!) });
+      // Notify save system of config change
+      import('../world/save').then(({ notificarMudancaConfig }) => notificarMudancaConfig());
+    });
+    row.appendChild(select);
+    body.appendChild(row);
+  }
+
+  // Modo de save
+  {
+    const [row] = rowWithLabel('Save experimental (IndexedDB)', 'saveMode');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = getConfig().saveMode === 'experimental';
+    cb.addEventListener('change', () => {
+      setConfig({ saveMode: cb.checked ? 'experimental' : 'periodic' });
+      import('../world/save').then(({ trocarModoSave }) => trocarModoSave());
+      import('./toast').then(({ toast }) => toast(cb.checked ? 'Modo experimental ativado' : 'Modo padr\u00E3o ativado', 'info'));
+    });
+    row.appendChild(cb);
+    body.appendChild(row);
+  }
 
   // Confirmar destrutivo
   {

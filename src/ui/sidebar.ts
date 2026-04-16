@@ -1,6 +1,5 @@
 import { registerSidebar, unregisterSidebar, onLayoutChange } from './hud-layout';
 import { abrirPauseMenu } from './pause-menu';
-import { abrirSettings } from './settings-panel';
 
 const SPRITE_SRC_SIZE = 32;
 const SPRITESHEET = 'assets/hud-icons.png';
@@ -203,17 +202,6 @@ export function criarSidebar(): HTMLDivElement {
   for (const item of NAV_ITEMS) {
     sidebar.appendChild(createNavButton(item));
   }
-
-  // ── Config button ──
-  const btnConfig = document.createElement('button');
-  btnConfig.type = 'button';
-  btnConfig.className = 'sidebar-btn sidebar-btn-text';
-  btnConfig.textContent = 'CONFIG';
-  btnConfig.addEventListener('click', (e) => {
-    e.preventDefault();
-    abrirSettings();
-  });
-  sidebar.appendChild(btnConfig);
 
   // ── Menu button ──
   const btnMenuOpen = document.createElement('button');
