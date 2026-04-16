@@ -96,6 +96,10 @@ async function bootstrap(): Promise<void> {
   });
 
   instalarListenersCicloDeVida();
+
+  window.addEventListener('orbital:voltar-ao-menu', () => {
+    window.location.reload();
+  });
 }
 
 function startTicker(): void {

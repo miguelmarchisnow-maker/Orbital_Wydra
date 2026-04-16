@@ -1,4 +1,6 @@
 import { registerSidebar, unregisterSidebar, onLayoutChange } from './hud-layout';
+import { salvarAgora, pararAutosave, getUltimoErro } from '../world/save';
+import { toast } from './toast';
 
 const SPRITE_SRC_SIZE = 32;
 const SPRITESHEET = 'assets/hud-icons.png';
@@ -140,6 +142,20 @@ function injectStyles(): void {
       font-weight: 400;
       line-height: 1;
     }
+
+    .sidebar-separator {
+      width: 80%;
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      margin: var(--sb-gap) 0;
+    }
+
+    .sidebar-btn-text {
+      font-size: var(--sb-label);
+      letter-spacing: 1px;
+      font-family: "Silkscreen", "VT323", monospace;
+      text-transform: uppercase;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -185,6 +201,39 @@ export function criarSidebar(): HTMLDivElement {
   for (const item of NAV_ITEMS) {
     sidebar.appendChild(createNavButton(item));
   }
+
+  // ── Save / Menu buttons ──
+  const sep = document.createElement('hr');
+  sep.className = 'sidebar-separator';
+  sidebar.appendChild(sep);
+
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'button';
+  btnSalvar.className = 'sidebar-btn sidebar-btn-text';
+  btnSalvar.textContent = 'Salvar';
+  btnSalvar.addEventListener('click', (e) => {
+    e.preventDefault();
+    salvarAgora();
+    if (getUltimoErro()) {
+      toast(`Erro ao salvar: ${getUltimoErro()!.message}`, 'err');
+    } else {
+      toast('Salvo', 'info');
+    }
+  });
+  sidebar.appendChild(btnSalvar);
+
+  const btnMenu = document.createElement('button');
+  btnMenu.type = 'button';
+  btnMenu.className = 'sidebar-btn sidebar-btn-text';
+  btnMenu.textContent = 'Voltar ao Menu';
+  btnMenu.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!confirm('Voltar ao menu? Seu progresso será salvo automaticamente.')) return;
+    salvarAgora();
+    pararAutosave();
+    window.dispatchEvent(new CustomEvent('orbital:voltar-ao-menu'));
+  });
+  sidebar.appendChild(btnMenu);
 
   _container = sidebar;
   document.body.appendChild(sidebar);
