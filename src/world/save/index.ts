@@ -39,6 +39,91 @@ let _ultimoErro: Error | null = null;
 
 const THROTTLE_MS = 200;
 
+// --- Dirty tracking (experimental mode) ---
+
+interface DirtyState {
+  header: boolean;
+  sistemas: Set<string>;
+  sois: Set<string>;
+  planetas: Set<string>;
+  naves: Set<string>;
+}
+
+let _dirty: DirtyState = {
+  header: false,
+  sistemas: new Set(),
+  sois: new Set(),
+  planetas: new Set(),
+  naves: new Set(),
+};
+
+export function marcarTudoDirty(mundo: Mundo): void {
+  _dirty.header = true;
+  for (const s of mundo.sistemas) _dirty.sistemas.add(s.id);
+  for (const s of mundo.sois) _dirty.sois.add(s.id);
+  for (const p of mundo.planetas) _dirty.planetas.add(p.id);
+  for (const n of mundo.naves) _dirty.naves.add(n.id);
+}
+
+function limparDirty(): void {
+  _dirty.header = false;
+  _dirty.sistemas.clear();
+  _dirty.sois.clear();
+  _dirty.planetas.clear();
+  _dirty.naves.clear();
+}
+
+function temDirty(): boolean {
+  return (
+    _dirty.header ||
+    _dirty.sistemas.size > 0 ||
+    _dirty.sois.size > 0 ||
+    _dirty.planetas.size > 0 ||
+    _dirty.naves.size > 0
+  );
+}
+
+// --- FlushController (experimental mode) ---
+
+let _flushTimer: number | null = null;
+let _flushInflight = false;
+
+export function iniciarFlushController(): void {
+  if (_flushTimer !== null) return;
+  _flushTimer = window.setInterval(() => {
+    void flushSeDirty();
+  }, 500);
+}
+
+export function pararFlushController(): void {
+  if (_flushTimer !== null) {
+    clearInterval(_flushTimer);
+    _flushTimer = null;
+  }
+}
+
+async function flushSeDirty(): Promise<void> {
+  if (!temDirty()) return;
+  if (_flushInflight) return;
+  if (!_mundoAtivo || !_nomeAtivo) return;
+  _flushInflight = true;
+  try {
+    const dto = serializarMundo(_mundoAtivo, _nomeAtivo, {
+      criadoEm: _criadoEm,
+      tempoJogadoMs: _tempoJogadoMs,
+    });
+    await _backend.salvar(dto);
+    limparDirty();
+    _ultimoSaveAt = Date.now();
+    _ultimoErro = null;
+  } catch (err) {
+    _ultimoErro = err instanceof Error ? err : new Error(String(err));
+    console.error('[save] flush failed:', err);
+  } finally {
+    _flushInflight = false;
+  }
+}
+
 export function getBackendAtivo(): StorageBackend {
   return _backend;
 }
@@ -54,7 +139,12 @@ export function iniciarAutosave(params: {
   _criadoEm = params.criadoEm;
   _tempoJogadoMs = params.tempoJogadoMs;
   _ultimoErro = null;
-  reagendarTimer();
+  const cfg = getConfig();
+  if (cfg.saveMode === 'experimental') {
+    iniciarFlushController();
+  } else {
+    reagendarTimer();
+  }
 }
 
 export function acumularTempoJogado(deltaMs: number): void {
@@ -70,6 +160,7 @@ export function pararAutosave(): void {
     clearInterval(_timerId);
     _timerId = null;
   }
+  pararFlushController();
   _mundoAtivo = null;
   _nomeAtivo = null;
 }

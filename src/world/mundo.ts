@@ -12,6 +12,7 @@ import { atualizarPesquisaPlaneta } from './pesquisa';
 import { atualizarCampoDeVisao } from './visao';
 import { atualizarFilasPlaneta, desenharConstrucoesPlaneta } from './construcao';
 import { profileMark, profileAcumular, profileFlush } from './profiling';
+import { getConfig } from '../core/config';
 
 // === Re-exports para manter compatibilidade de imports externos ===
 export { profiling } from './profiling';
@@ -322,6 +323,10 @@ export function atualizarMundo(mundo: Mundo, app: Application, camera: Camera): 
 
   profileAcumular('total', frameInicio);
   profileFlush();
+
+  if (getConfig().saveMode === 'experimental') {
+    import('./save').then(({ marcarTudoDirty }) => marcarTudoDirty(mundo));
+  }
 
   verificarEstadoJogo(mundo);
 }
