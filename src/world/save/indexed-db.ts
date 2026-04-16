@@ -15,13 +15,14 @@ let _dbPromise: Promise<IDBDatabase> | null = null;
 
 export function abrirDb(): Promise<IDBDatabase> {
   if (_dbPromise) return _dbPromise;
-  _dbPromise = new Promise((resolve, reject) => {
+  _dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('IndexedDB indisponível'));
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('IndexedDB bloqueado por outra aba'));
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -34,6 +35,9 @@ export function abrirDb(): Promise<IDBDatabase> {
         }
       }
     };
+  }).catch((err) => {
+    _dbPromise = null; // allow retry on transient failures
+    throw err;
   });
   return _dbPromise;
 }
