@@ -3,6 +3,7 @@ import type { Planeta, Mundo, FonteVisao, Camera } from '../types';
 import { nomeTipoPlaneta } from './planeta';
 import { criarPlanetaProceduralSprite } from './planeta-procedural';
 import { calcularBoundsViewport } from './viewport-bounds';
+import { getConfig } from '../core/config';
 
 interface MemoriaPlanetaDados {
   dono: string;
@@ -260,6 +261,12 @@ export function atualizarVisibilidadeMemoria(planeta: Planeta, visivelAoJogador:
   const memoria = memorias.get(planeta);
   if (!memoria) return;
 
+  const maxFantasmas = getConfig().graphics.maxFantasmas;
+  if (maxFantasmas === 0) {
+    memoria.visual.visible = false;
+    return;
+  }
+
   const memoriaDados = memoria.dados;
   const deveMostrar = memoria.conhecida && !visivelAoJogador && !!memoriaDados;
   const memoriaNaTela = deveMostrar &&
@@ -279,6 +286,32 @@ export function atualizarVisibilidadeMemoria(planeta: Planeta, visivelAoJogador:
     }
   } else {
     memoria.visual.visible = false;
+  }
+}
+
+/**
+ * Enforces the max-fantasmas cap. Called once per frame (from
+ * atualizarMundo) after all individual atualizarVisibilidadeMemoria
+ * calls. Visible ghosts beyond the cap are hidden, ordered by timestamp
+ * desc (most recent wins).
+ */
+export function aplicarLimiteFantasmas(mundo: Mundo): void {
+  const max = getConfig().graphics.maxFantasmas;
+  if (max < 0) return; // unlimited
+  if (max === 0) return; // already handled in atualizarVisibilidadeMemoria
+
+  const visiveis: Array<{ planeta: Planeta; ts: number }> = [];
+  for (const p of mundo.planetas) {
+    const m = memorias.get(p);
+    if (!m || !m.visual.visible || !m.dados) continue;
+    visiveis.push({ planeta: p, ts: m.dados.timestamp });
+  }
+  if (visiveis.length <= max) return;
+
+  visiveis.sort((a, b) => b.ts - a.ts);
+  for (let i = max; i < visiveis.length; i++) {
+    const m = memorias.get(visiveis[i].planeta);
+    if (m) m.visual.visible = false;
   }
 }
 
@@ -349,7 +382,15 @@ export function desenharNeblinaVisao(mundo: Mundo, fontesVisao: FonteVisao[], ca
   }
 
   // Só redesenhar canvas a cada N frames
-  const redesenhar = _fogFrame % config.fogThrottle === 0;
+  const gfxCfg = getConfig().graphics;
+  // fogThrottle === 0 means fog disabled completely — skip everything below.
+  if (gfxCfg.fogThrottle === 0) {
+    if (_fogSprite && _fogSprite.parent) {
+      _fogSprite.parent.removeChild(_fogSprite);
+    }
+    return;
+  }
+  const redesenhar = _fogFrame % gfxCfg.fogThrottle === 0;
 
   if (redesenhar) {
     const t0 = performance.now();

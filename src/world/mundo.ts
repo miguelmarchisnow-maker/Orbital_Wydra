@@ -4,7 +4,7 @@ import type { Mundo, Planeta, Sol, Nave, Camera, TipoJogador } from '../types';
 import { criarFundo, atualizarFundo } from './fundo';
 import { TIPO_PLANETA } from './planeta';
 import { atualizarTempoPlanetas, atualizarLuzPlaneta } from './planeta-procedural';
-import { criarCamadaMemoria, criarMemoriaVisualPlaneta, registrarMemoriaPlaneta, atualizarVisibilidadeMemoria, atualizarEscalaLabelMemoria } from './nevoa';
+import { criarCamadaMemoria, criarMemoriaVisualPlaneta, registrarMemoriaPlaneta, atualizarVisibilidadeMemoria, atualizarEscalaLabelMemoria, aplicarLimiteFantasmas } from './nevoa';
 import { criarSistemaSolar } from './sistema';
 import { calcularBoundsViewport } from './viewport-bounds';
 import { resetarNomesPlanetas } from './nomes';
@@ -314,6 +314,7 @@ export function atualizarMundo(mundo: Mundo, app: Application, camera: Camera): 
     atualizarVisibilidadeMemoria(planeta, planeta._visivelAoJogador, esq, dir, cima, baixo);
     atualizarEscalaLabelMemoria(planeta, zoom);
   }
+  aplicarLimiteFantasmas(mundo);
   profileAcumular('planetas', t);
 
   t = profileMark();
