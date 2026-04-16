@@ -22,6 +22,7 @@ import { abrirPauseMenu, isPauseMenuOpen } from './ui/pause-menu';
 import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, lerEMigrar, recuperarEmergency, salvarAgora, getBackendAtivo, getUltimoErro } from './world/save';
 import type { MundoDTO } from './world/save';
 import { toast } from './ui/toast';
+import { getConfig, setConfigDuranteBoot, onConfigChange } from './core/config';
 import { abrirNewWorldModal } from './ui/new-world-modal';
 import { criarLoadingScreen, mostrarCarregando, esconderCarregando } from './ui/loading-screen';
 import { somVitoria, somDerrota } from './audio/som';
@@ -44,13 +45,67 @@ async function bootstrap(): Promise<void> {
   installRootVariables();
 
   const app = new Application();
-  await app.init({
+
+  const gfx = getConfig().graphics;
+  const baseInit: any = {
     width: window.innerWidth,
     height: window.innerHeight,
     backgroundColor: 0x000000,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
     antialias: true,
+  };
+  if (gfx.gpuPreference !== 'auto') {
+    baseInit.powerPreference = gfx.gpuPreference;
+  }
+
+  // Optional: WebGL version forced context injection
+  if (gfx.renderer === 'webgl' && gfx.webglVersion !== 'auto') {
+    const canvas = document.createElement('canvas');
+    const ctxOpts: WebGLContextAttributes = { antialias: true, premultipliedAlpha: true };
+    if (gfx.gpuPreference !== 'auto') {
+      ctxOpts.powerPreference = gfx.gpuPreference;
+    }
+    const gl = gfx.webglVersion === '1'
+      ? canvas.getContext('webgl', ctxOpts)
+      : canvas.getContext('webgl2', ctxOpts);
+    if (gl) {
+      baseInit.context = gl as any;
+      baseInit.canvas = canvas as any;
+    } else {
+      console.warn(`[renderer] WebGL ${gfx.webglVersion} indisponível, caindo pra auto`);
+      setConfigDuranteBoot({ graphics: { ...gfx, webglVersion: 'auto' } });
+    }
+  }
+
+  try {
+    await app.init({ ...baseInit, preference: gfx.renderer });
+  } catch (err) {
+    if (gfx.renderer === 'webgpu') {
+      console.warn('[renderer] WebGPU failed, falling back to WebGL:', err);
+      setConfigDuranteBoot({ graphics: { ...getConfig().graphics, renderer: 'webgl' } });
+      await app.init({ ...baseInit, preference: 'webgl' });
+      window.setTimeout(() => toast('WebGPU indisponível — usando WebGL', 'err'), 2000);
+    } else if (gfx.renderer === 'webgl' && gfx.webglVersion !== 'auto') {
+      console.warn(`[renderer] WebGL ${gfx.webglVersion} forçado falhou, caindo pra auto:`, err);
+      setConfigDuranteBoot({ graphics: { ...getConfig().graphics, webglVersion: 'auto' } });
+      delete baseInit.context;
+      delete baseInit.canvas;
+      await app.init({ ...baseInit, preference: 'webgl' });
+      window.setTimeout(() => toast(`WebGL ${gfx.webglVersion} indisponível — usando automático`, 'err'), 2000);
+    } else {
+      throw err;
+    }
+  }
+
+  // Apply initial FPS cap
+  if (gfx.fpsCap > 0) {
+    app.ticker.maxFPS = gfx.fpsCap;
+  }
+
+  // React to config changes for FPS cap
+  onConfigChange((cfg) => {
+    app.ticker.maxFPS = cfg.graphics.fpsCap > 0 ? cfg.graphics.fpsCap : 0;
   });
 
   document.body.style.margin = '0';
@@ -62,6 +117,7 @@ async function bootstrap(): Promise<void> {
   });
 
   _app = app;
+  (window as any)._app = app;
   setAppReferenceForBake(app);
 
   // Build the menu background: a lightweight single-system world, not
