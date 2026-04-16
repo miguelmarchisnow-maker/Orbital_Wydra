@@ -1,9 +1,8 @@
 import { Application } from 'pixi.js';
-import type { Mundo } from './types';
+import type { Mundo, TipoJogador } from './types';
 import { criarMundo, atualizarMundo, getEstadoJogo } from './world/mundo';
 import { criarMundoMenu, atualizarMundoMenu, destruirMundoMenu, type MundoMenu } from './world/mundo-menu';
 import { configurarCamera, atualizarCamera, getCamera, setCameraPos, setTipoJogador, zoomIn, zoomOut, setZoom } from './core/player';
-import { getTipos } from './ui/selecao';
 import { criarSidebar } from './ui/sidebar';
 import { criarEmpireBadge } from './ui/empire-badge';
 import { criarChatLog } from './ui/chat-log';
@@ -18,11 +17,13 @@ import { criarShipPanel, atualizarShipPanel } from './ui/ship-panel';
 import { criarColonizerPanel, atualizarColonizerPanel } from './ui/colonizer-panel';
 import { criarColonyModal, atualizarColonyModal } from './ui/colony-modal';
 import { criarConfirmDialog } from './ui/confirm-dialog';
-import { criarMainMenu, esconderMainMenu } from './ui/main-menu';
+import { criarMainMenu, esconderMainMenu, mostrarMainMenu } from './ui/main-menu';
+import { reconstruirMundo, iniciarAutosave, instalarListenersCicloDeVida, acumularTempoJogado, getBackendAtivo, salvarAgora } from './world/save';
+import { abrirNewWorldModal } from './ui/new-world-modal';
 import { criarLoadingScreen, mostrarCarregando, esconderCarregando } from './ui/loading-screen';
 import { somVitoria, somDerrota } from './audio/som';
 
-// Top-level state shared across bootstrap and iniciarJogo.
+// Top-level state shared across bootstrap, iniciarJogoNovo, and carregarMundo.
 let _app: Application | null = null;
 let _mundo: Mundo | null = null;
 let _mundoMenu: MundoMenu | null = null;
@@ -86,13 +87,15 @@ async function bootstrap(): Promise<void> {
 
   criarMainMenu({
     onNewGame: () => {
-      void iniciarJogo();
+      abrirNewWorldModal({
+        onConfirm: (nome, tipoJogador) => { void iniciarJogoNovo(nome, tipoJogador); },
+        onCancel: () => {},
+      });
     },
-    onLoadGame: (_saveId: string) => {
-      // Phase 2: save/load not implemented yet.
-      void iniciarJogo();
-    },
+    onLoadGame: (nome: string) => { void carregarMundo(nome); },
   });
+
+  instalarListenersCicloDeVida();
 }
 
 function startTicker(): void {
@@ -137,6 +140,7 @@ function startTicker(): void {
     // ── Game phase: full update of the real world + HUD ──
     if (!_mundo) return;
     const mundo = _mundo;
+    acumularTempoJogado(app.ticker.deltaMS);
 
     const c = getCheats();
     if (c.recursosInfinitos) {
@@ -171,35 +175,21 @@ function startTicker(): void {
   });
 }
 
-async function iniciarJogo(): Promise<void> {
-  if (!_app || _gameStarted) return;
+async function entrarNoJogo(mundo: Mundo, nome: string, criadoEm: number, tempoJogadoMs: number): Promise<void> {
+  if (!_app) return;
   const app = _app;
 
-  esconderMainMenu();
-  mostrarCarregando('Criando mundo');
-
-  // Let the browser paint the loader before we start hogging the main
-  // thread with world generation.
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-  // Tear down the menu background world so it doesn't keep running in
-  // parallel with the real one.
   if (_mundoMenu) {
     destruirMundoMenu(_mundoMenu, app);
     _mundoMenu = null;
   }
 
-  // Build the real game world.
-  const tipoEscolhido = getTipos()[0];
-  setTipoJogador();
-  const mundo = await criarMundo(app, tipoEscolhido) as unknown as Mundo;
   app.stage.addChild(mundo.container);
   _mundo = mundo;
 
   const planetaJogador = mundo.planetas.find((p) => p.dados.dono === 'jogador');
   if (planetaJogador) setCameraPos(planetaJogador.x, planetaJogador.y);
   setZoom(1.0);
-
   configurarCamera(app, mundo);
 
   if (!_hudInstalled) {
@@ -226,13 +216,46 @@ async function iniciarJogo(): Promise<void> {
     criarDebugMenu(app, mundo);
   }
 
-  // Flip the flag LAST so the ticker doesn't try to read _mundo before
-  // all the HUD panels are ready.
   _gameStarted = true;
-
-  // Hold the loader for a minimum duration so the transition isn't a
-  // single-frame flash even on fast machines, then fade it out.
+  iniciarAutosave({ mundo, nome, criadoEm, tempoJogadoMs });
+  salvarAgora();
   await esconderCarregando();
+}
+
+async function iniciarJogoNovo(nome: string, tipoJogador: TipoJogador): Promise<void> {
+  if (!_app || _gameStarted) return;
+  const app = _app;
+
+  esconderMainMenu();
+  mostrarCarregando('Criando mundo');
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+  setTipoJogador();
+  const mundo = await criarMundo(app, tipoJogador) as unknown as Mundo;
+  await entrarNoJogo(mundo, nome, Date.now(), 0);
+}
+
+async function carregarMundo(nome: string): Promise<void> {
+  if (!_app || _gameStarted) return;
+  const app = _app;
+
+  esconderMainMenu();
+  mostrarCarregando(`Carregando mundo: ${nome}`);
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+  const backend = getBackendAtivo();
+  const resultado = backend.carregar(nome);
+  const dto = resultado instanceof Promise ? await resultado : resultado;
+  if (!dto) {
+    await esconderCarregando();
+    mostrarMainMenu();
+    alert(`Não foi possível carregar o mundo "${nome}".`);
+    return;
+  }
+
+  setTipoJogador();
+  const mundo = await reconstruirMundo(dto, app);
+  await entrarNoJogo(mundo, nome, dto.criadoEm, dto.tempoJogadoMs);
 }
 
 void bootstrap();

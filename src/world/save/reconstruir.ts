@@ -133,7 +133,6 @@ export async function reconstruirMundo(
         dados: { ...m.dados },
       });
     }
-    app.stage.addChild(mundo.container);
   }
 
   return mundo;
