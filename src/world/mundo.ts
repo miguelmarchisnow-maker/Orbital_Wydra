@@ -6,6 +6,7 @@ import { TIPO_PLANETA } from './planeta';
 import { atualizarTempoPlanetas, atualizarLuzPlaneta } from './planeta-procedural';
 import { criarCamadaMemoria, criarMemoriaVisualPlaneta, registrarMemoriaPlaneta, atualizarVisibilidadeMemoria, atualizarEscalaLabelMemoria } from './nevoa';
 import { criarSistemaSolar } from './sistema';
+import { calcularBoundsViewport } from './viewport-bounds';
 import { resetarNomesPlanetas } from './nomes';
 import { atualizarNaves, atualizarSelecaoNave, carregarSpritesheetNaves } from './naves';
 import { atualizarPesquisaPlaneta } from './pesquisa';
@@ -258,18 +259,26 @@ export function atualizarMundo(mundo: Mundo, app: Application, camera: Camera): 
   profileAcumular('logica', t);
 
   const zoom = camera.zoom || 1;
-  const camX = camera.x + app.screen.width / 2;
-  const camY = camera.y + app.screen.height / 2;
+  const zoomSafe = camera.zoom || 1;
 
   t = profileMark();
-  atualizarFundo(mundo.fundo as ReturnType<typeof criarFundo>, camX, camY, app.screen.width, app.screen.height);
+  atualizarFundo(
+    mundo.fundo as ReturnType<typeof criarFundo>,
+    camera.x,
+    camera.y,
+    app.screen.width / zoomSafe,
+    app.screen.height / zoomSafe,
+  );
   profileAcumular('fundo', t);
 
-  const margem = 600 / zoom;
-  const esq = camera.x - margem;
-  const dir = camera.x + app.screen.width / zoom + margem;
-  const cima = camera.y - margem;
-  const baixo = camera.y + app.screen.height / zoom + margem;
+  const bounds = calcularBoundsViewport(
+    camera.x,
+    camera.y,
+    camera.zoom,
+    app.screen.width,
+    app.screen.height,
+  );
+  const { esq, dir, cima, baixo } = bounds;
 
   t = profileMark();
   atualizarCampoDeVisao(mundo, camera, app);
