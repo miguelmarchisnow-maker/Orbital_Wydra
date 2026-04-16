@@ -27,17 +27,37 @@ function injectStyles(): void {
       justify-content: center;
       font-family: var(--hud-font);
       color: var(--hud-text);
+      animation: nwm-backdrop-in 200ms ease-out forwards;
+    }
+    @keyframes nwm-backdrop-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .new-world-modal.closing {
+      opacity: 0;
+      transition: opacity 200ms ease-out;
+    }
+    .new-world-modal.closing .nwm-card {
+      transform: translateY(calc(var(--hud-unit) * 0.3)) scale(0.98);
+      opacity: 0;
+      transition: opacity 150ms ease-out, transform 200ms ease-out;
     }
     .nwm-card {
       background: var(--hud-bg);
       border: 1px solid var(--hud-border);
       border-radius: var(--hud-radius);
+      backdrop-filter: blur(8px);
       padding: calc(var(--hud-unit) * 2);
       min-width: calc(var(--hud-unit) * 22);
       display: flex;
       flex-direction: column;
       gap: calc(var(--hud-unit) * 1);
       box-shadow: 0 calc(var(--hud-unit) * 0.4) calc(var(--hud-unit) * 1.2) rgba(0, 0, 0, 0.6);
+      animation: nwm-card-in 240ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+    }
+    @keyframes nwm-card-in {
+      from { opacity: 0; transform: translateY(calc(var(--hud-unit) * 0.5)) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
     .nwm-title {
       font-family: var(--hud-font-display);
@@ -46,6 +66,8 @@ function injectStyles(): void {
       text-transform: uppercase;
       text-align: center;
       margin: 0 0 calc(var(--hud-unit) * 0.8);
+      border-bottom: 1px solid var(--hud-line);
+      padding-bottom: calc(var(--hud-unit) * 0.8);
     }
     .nwm-label {
       font-size: calc(var(--hud-unit) * 0.8);
@@ -58,10 +80,16 @@ function injectStyles(): void {
       width: 100%;
       background: rgba(0, 0, 0, 0.4);
       border: 1px solid var(--hud-border);
+      border-radius: calc(var(--hud-radius) * 0.6);
       color: var(--hud-text);
       padding: calc(var(--hud-unit) * 0.5) calc(var(--hud-unit) * 0.7);
       font-family: var(--hud-font);
       font-size: calc(var(--hud-unit) * 0.95);
+      outline: none;
+      transition: border-color 140ms ease;
+    }
+    .nwm-input:focus {
+      border-color: #8ce0ff;
     }
     .nwm-error {
       color: #ff6b6b;
@@ -78,15 +106,18 @@ function injectStyles(): void {
       height: calc(var(--hud-unit) * 2.2);
       background: var(--hud-bg);
       border: 1px solid var(--hud-border);
+      border-radius: calc(var(--hud-radius) * 0.6);
       color: var(--hud-text);
       font-family: var(--hud-font);
       font-size: calc(var(--hud-unit) * 0.85);
-      letter-spacing: 0.12em;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
       cursor: pointer;
+      transition: background 140ms ease, letter-spacing 140ms ease;
     }
+    .nwm-btn:hover { background: rgba(255,255,255,0.08); letter-spacing: 0.18em; }
+    .nwm-btn:active { transform: translateY(1px); }
     .nwm-btn.primary { background: rgba(255,255,255,0.12); border-color: #fff; }
-    .nwm-btn:hover { background: rgba(255,255,255,0.08); }
   `;
   document.head.appendChild(style);
 }
@@ -180,6 +211,9 @@ export function abrirNewWorldModal(opts: OpenOpts): void {
 }
 
 function fechar(): void {
-  _container?.remove();
+  if (!_container) return;
+  const c = _container;
   _container = null;
+  c.classList.add('closing');
+  setTimeout(() => c.remove(), 200);
 }
