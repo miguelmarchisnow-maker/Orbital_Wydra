@@ -115,7 +115,7 @@ async function bootstrap(): Promise<void> {
     font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.75);
     color: var(--hud-text-dim); background: rgba(0,0,0,0.5);
     padding: calc(var(--hud-unit) * 0.2) calc(var(--hud-unit) * 0.5);
-    border: 1px solid var(--hud-border); z-index: 100; pointer-events: none;
+    border: 1px solid var(--hud-border); z-index: 600; pointer-events: none;
     display: ${gfx.mostrarFps ? 'block' : 'none'};
   `;
   document.body.appendChild(fpsEl);
