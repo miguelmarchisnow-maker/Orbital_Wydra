@@ -9,6 +9,7 @@ import { ACTIONS, CATEGORIAS_ORDEM, ACTION_BY_ID, type ActionDef } from '../core
 import { getActiveKeymap, detectarConflito } from '../core/input/keymap';
 import { setDispatcherHabilitado } from '../core/input/dispatcher';
 import { trocarIdioma, getIdioma } from '../core/i18n/idioma';
+import { t } from '../core/i18n/t';
 
 type Tab = 'audio' | 'graphics' | 'gameplay';
 
@@ -371,9 +372,9 @@ function showReloadBanner(afterRow: HTMLDivElement): void {
   const banner = document.createElement('div');
   banner.className = 'settings-reload-banner';
   const msg = document.createElement('span');
-  msg.textContent = 'Requer recarregar o jogo.';
+  msg.textContent = t('settings.requer_reload');
   const btn = document.createElement('button');
-  btn.textContent = 'Recarregar agora';
+  btn.textContent = t('settings.recarregar_agora');
   btn.addEventListener('click', () => window.location.reload());
   banner.append(msg, btn);
   afterRow.insertAdjacentElement('afterend', banner);
@@ -394,9 +395,9 @@ export function renderSettingsInto(host: HTMLDivElement): void {
   const tabsEl = document.createElement('div');
   tabsEl.className = 'settings-tabs';
   const tabs: Array<[Tab, string]> = [
-    ['audio', '\u00C1udio'],
-    ['graphics', 'Gr\u00E1ficos'],
-    ['gameplay', 'Jogabilidade'],
+    ['audio', t('settings.aba_audio')],
+    ['graphics', t('settings.aba_graficos')],
+    ['gameplay', t('settings.aba_jogabilidade')],
   ];
   for (const [id, label] of tabs) {
     const btn = document.createElement('button');
@@ -420,15 +421,15 @@ export function renderSettingsInto(host: HTMLDivElement): void {
   const footer = document.createElement('div');
   footer.className = 'settings-footer';
   const resetTab = document.createElement('button');
-  resetTab.textContent = 'Resetar esta aba';
+  resetTab.textContent = t('settings.resetar_aba');
   resetTab.addEventListener('click', () => {
     resetarAba(_currentTab);
     refreshBody();
   });
   const resetAll = document.createElement('button');
-  resetAll.textContent = 'Resetar tudo';
+  resetAll.textContent = t('settings.resetar_tudo');
   resetAll.addEventListener('click', () => {
-    confirmarAcao('Resetar todas as configura\u00E7\u00F5es?', () => {
+    confirmarAcao(t('settings.resetar_tudo_confirm'), () => {
       resetarTudo();
       refreshBody();
     });
@@ -472,7 +473,7 @@ export function abrirSettings(): void {
   header.className = 'settings-header';
   const title = document.createElement('h2');
   title.className = 'settings-title';
-  title.textContent = 'Configura\u00E7\u00F5es';
+  title.textContent = t('settings.titulo');
   const close = document.createElement('button');
   close.className = 'settings-close';
   close.textContent = '\u2715';
@@ -484,9 +485,9 @@ export function abrirSettings(): void {
   const tabsEl = document.createElement('div');
   tabsEl.className = 'settings-tabs';
   const tabs: Array<[Tab, string]> = [
-    ['audio', '\u00C1udio'],
-    ['graphics', 'Gr\u00E1ficos'],
-    ['gameplay', 'Jogabilidade'],
+    ['audio', t('settings.aba_audio')],
+    ['graphics', t('settings.aba_graficos')],
+    ['gameplay', t('settings.aba_jogabilidade')],
   ];
   for (const [id, label] of tabs) {
     const btn = document.createElement('button');
@@ -510,15 +511,15 @@ export function abrirSettings(): void {
   const footer = document.createElement('div');
   footer.className = 'settings-footer';
   const resetTab = document.createElement('button');
-  resetTab.textContent = 'Resetar esta aba';
+  resetTab.textContent = t('settings.resetar_aba');
   resetTab.addEventListener('click', () => {
     resetarAba(_currentTab);
     refreshBody();
   });
   const resetAll = document.createElement('button');
-  resetAll.textContent = 'Resetar tudo';
+  resetAll.textContent = t('settings.resetar_tudo');
   resetAll.addEventListener('click', () => {
-    confirmarAcao('Resetar todas as configurações?', () => {
+    confirmarAcao(t('settings.resetar_tudo_confirm'), () => {
       resetarTudo();
       refreshBody();
     });
@@ -746,7 +747,7 @@ function renderGraphicsTabMotor(body: HTMLDivElement): void {
 
   const sec = document.createElement('div');
   sec.className = 'settings-section';
-  sec.textContent = 'Motor';
+  sec.textContent = t('settings.secao_motor');
   body.appendChild(sec);
 
   // Renderer
@@ -802,7 +803,7 @@ function renderGraphicsTabMotor(body: HTMLDivElement): void {
     const row = document.createElement('div');
     row.className = 'settings-row';
     const btn = document.createElement('button');
-    btn.textContent = 'Ver informa\u00E7\u00F5es do renderer';
+    btn.textContent = t('settings.ver_info_renderer');
     btn.style.cssText = 'background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.8); padding: calc(var(--hud-unit) * 0.5) calc(var(--hud-unit) * 1); cursor: pointer;';
     btn.addEventListener('click', () => {
       const app = (window as any)._app; // exposed by main.ts for debug
@@ -823,7 +824,7 @@ function renderGraphicsTabAvancado(body: HTMLDivElement): void {
 
   const sec = document.createElement('div');
   sec.className = 'settings-section';
-  sec.textContent = 'Avan\u00E7ado';
+  sec.textContent = t('settings.secao_avancado');
   body.appendChild(sec);
 
   // Mostrar \u00F3rbitas
@@ -965,12 +966,12 @@ function renderGameplayTab(body: HTMLDivElement): void {
     const row = document.createElement('div');
     row.className = 'settings-row';
     const lbl = document.createElement('label');
-    lbl.textContent = 'Idioma';
+    lbl.textContent = t('idioma.label');
     row.appendChild(lbl);
     const select = document.createElement('select');
     const opts: Array<['pt' | 'en', string]> = [
-      ['pt', 'Português'],
-      ['en', 'English'],
+      ['pt', t('idioma.pt')],
+      ['en', t('idioma.en')],
     ];
     for (const [val, label] of opts) {
       const opt = document.createElement('option');
@@ -990,12 +991,14 @@ function renderGameplayTab(body: HTMLDivElement): void {
   renderControlesSection(body);
 }
 
-const CATEGORIA_NAMES: Record<ActionDef['categoria'], string> = {
-  camera: 'Câmera',
-  interface: 'Interface',
-  jogo: 'Jogo',
-  debug: 'Debug',
-};
+function getCategoriaNames(): Record<ActionDef['categoria'], string> {
+  return {
+    camera: t('input.cat_camera'),
+    interface: t('input.cat_interface'),
+    jogo: t('input.cat_jogo'),
+    debug: t('input.cat_debug'),
+  };
+}
 
 const KEY_DISPLAY: Record<string, string> = {
   Equal: '=', Minus: '-', NumpadAdd: 'Num+', NumpadSubtract: 'Num-',
@@ -1011,10 +1014,11 @@ function formatKeyCode(code: string): string {
 function renderControlesSection(body: HTMLDivElement): void {
   const sec = document.createElement('div');
   sec.className = 'settings-section';
-  sec.textContent = 'Controles';
+  sec.textContent = t('input.titulo_secao');
   body.appendChild(sec);
 
   const keymap = getActiveKeymap();
+  const categoriaNames = getCategoriaNames();
 
   for (const cat of CATEGORIAS_ORDEM) {
     const catActions = ACTIONS.filter((a) => a.categoria === cat);
@@ -1022,7 +1026,7 @@ function renderControlesSection(body: HTMLDivElement): void {
 
     const catLabel = document.createElement('div');
     catLabel.style.cssText = 'font-size: calc(var(--hud-unit) * 0.7); color: var(--hud-text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-top: calc(var(--hud-unit) * 0.8); padding-bottom: calc(var(--hud-unit) * 0.2); border-bottom: 1px solid var(--hud-border);';
-    catLabel.textContent = CATEGORIA_NAMES[cat] ?? cat;
+    catLabel.textContent = categoriaNames[cat] ?? cat;
     body.appendChild(catLabel);
 
     for (const action of catActions) {
@@ -1040,7 +1044,7 @@ function renderControlesSection(body: HTMLDivElement): void {
       row.appendChild(keyDisplay);
 
       const rebindBtn = document.createElement('button');
-      rebindBtn.textContent = 'Rebind';
+      rebindBtn.textContent = t('input.rebind');
       rebindBtn.style.cssText = 'background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text-dim); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.7); padding: calc(var(--hud-unit) * 0.2) calc(var(--hud-unit) * 0.5); cursor: pointer;';
       rebindBtn.addEventListener('click', () => {
         iniciarRebind(action, keyDisplay, rebindBtn);
@@ -1052,7 +1056,7 @@ function renderControlesSection(body: HTMLDivElement): void {
   }
 
   const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Resetar controles';
+  resetBtn.textContent = t('input.resetar');
   resetBtn.style.cssText = 'margin-top: calc(var(--hud-unit) * 0.8); background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text-dim); font-family: var(--hud-font); padding: calc(var(--hud-unit) * 0.4) calc(var(--hud-unit) * 1); cursor: pointer; width: 100%;';
   resetBtn.addEventListener('click', () => {
     setConfig({ input: { bindings: {} } });
@@ -1063,7 +1067,7 @@ function renderControlesSection(body: HTMLDivElement): void {
 
 function iniciarRebind(action: ActionDef, display: HTMLSpanElement, btn: HTMLButtonElement): void {
   const originalText = btn.textContent;
-  btn.textContent = 'Pressione tecla...';
+  btn.textContent = t('input.pressione');
   display.textContent = '...';
   setDispatcherHabilitado(false);
 
@@ -1097,10 +1101,10 @@ function iniciarRebind(action: ActionDef, display: HTMLSpanElement, btn: HTMLBut
       const code = e.code;
       window.removeEventListener('keydown', handler, true);
       void confirmar({
-        title: 'Conflito de tecla',
-        message: `Já usado por "${conflictAction?.label ?? conflito}". Trocar?`,
-        confirmLabel: 'Trocar',
-        cancelLabel: 'Cancelar',
+        title: t('input.conflito_titulo'),
+        message: t('input.conflito', { acao: conflictAction?.label ?? conflito }),
+        confirmLabel: t('input.trocar'),
+        cancelLabel: t('confirm.cancelar'),
       }).then((ok) => {
         if (!ok) { cleanup(); return; }
         const currentBindings: Record<string, string[]> = { ...(getConfig().input?.bindings ?? {}) };

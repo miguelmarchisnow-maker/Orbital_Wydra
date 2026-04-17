@@ -26,6 +26,7 @@ import { toast } from './ui/toast';
 import { getConfig, setConfigDuranteBoot, onConfigChange } from './core/config';
 import { abrirNewWorldModal } from './ui/new-world-modal';
 import { criarLoadingScreen, mostrarCarregando, esconderCarregando } from './ui/loading-screen';
+import { t } from './core/i18n/t';
 import { somVitoria, somDerrota } from './audio/som';
 import { setAppReferenceForBake } from './world/planeta-procedural';
 // Top-level state shared across bootstrap, iniciarJogoNovo, and carregarMundo.
@@ -491,7 +492,7 @@ async function carregarMundo(nome: string): Promise<void> {
   const app = _app;
 
   esconderMainMenu();
-  mostrarCarregando(`Carregando mundo: ${nome}`);
+  mostrarCarregando(t('loading.carregando', { nome }));
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
   let dto: MundoDTO | null = null;
