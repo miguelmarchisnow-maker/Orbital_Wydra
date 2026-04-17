@@ -19,6 +19,15 @@ export const DICT: Record<string, { pt: string; en: string }> = {
   'hud.erro_salvar': { pt: 'Erro ao salvar: {msg}', en: 'Save error: {msg}' },
   'hud.voltar_menu_confirm': { pt: 'Voltar ao menu? Seu progresso será salvo automaticamente.', en: 'Return to menu? Your progress will be saved automatically.' },
 
+  // Sidebar navigation
+  'sidebar.overview': { pt: 'Visão', en: 'Overview' },
+  'sidebar.planets': { pt: 'Planetas', en: 'Planets' },
+  'sidebar.fleets': { pt: 'Frotas', en: 'Fleets' },
+  'sidebar.research': { pt: 'Pesquisa', en: 'Research' },
+  'sidebar.construct': { pt: 'Construir', en: 'Construct' },
+  'sidebar.alliance': { pt: 'Aliança', en: 'Alliance' },
+  'sidebar.inbox': { pt: 'Correio', en: 'Inbox' },
+
   // New world
   'novo_mundo.titulo': { pt: 'Novo Mundo', en: 'New World' },
   'novo_mundo.nome_label': { pt: 'Nome do mundo', en: 'World name' },
