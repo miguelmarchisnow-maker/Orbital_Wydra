@@ -4,6 +4,10 @@ import { comHelp } from './tooltip';
 import { abrirRendererInfoModal } from './renderer-info-modal';
 import { toast } from './toast';
 import { confirmarAcao } from './confirmar-acao';
+import { confirmar } from './confirm-dialog';
+import { ACTIONS, CATEGORIAS_ORDEM, ACTION_BY_ID, type ActionDef } from '../core/input/actions';
+import { getActiveKeymap, detectarConflito } from '../core/input/keymap';
+import { setDispatcherHabilitado } from '../core/input/dispatcher';
 
 type Tab = 'audio' | 'graphics' | 'gameplay';
 
@@ -954,6 +958,140 @@ function renderGameplayTab(body: HTMLDivElement): void {
     row.appendChild(cb);
     body.appendChild(row);
   }
+
+  // ── Controles section ──
+  renderControlesSection(body);
+}
+
+const CATEGORIA_NAMES: Record<ActionDef['categoria'], string> = {
+  camera: 'Câmera',
+  interface: 'Interface',
+  jogo: 'Jogo',
+  debug: 'Debug',
+};
+
+const KEY_DISPLAY: Record<string, string> = {
+  Equal: '=', Minus: '-', NumpadAdd: 'Num+', NumpadSubtract: 'Num-',
+  ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+  Space: 'Space', Escape: 'Esc', Backquote: '`',
+  Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4',
+};
+
+function formatKeyCode(code: string): string {
+  return KEY_DISPLAY[code] ?? code.replace(/^Key/, '');
+}
+
+function renderControlesSection(body: HTMLDivElement): void {
+  const sec = document.createElement('div');
+  sec.className = 'settings-section';
+  sec.textContent = 'Controles';
+  body.appendChild(sec);
+
+  const keymap = getActiveKeymap();
+
+  for (const cat of CATEGORIAS_ORDEM) {
+    const catActions = ACTIONS.filter((a) => a.categoria === cat);
+    if (catActions.length === 0) continue;
+
+    const catLabel = document.createElement('div');
+    catLabel.style.cssText = 'font-size: calc(var(--hud-unit) * 0.7); color: var(--hud-text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-top: calc(var(--hud-unit) * 0.8); padding-bottom: calc(var(--hud-unit) * 0.2); border-bottom: 1px solid var(--hud-border);';
+    catLabel.textContent = CATEGORIA_NAMES[cat] ?? cat;
+    body.appendChild(catLabel);
+
+    for (const action of catActions) {
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+
+      const lbl = document.createElement('label');
+      lbl.textContent = action.label;
+      row.appendChild(lbl);
+
+      const keys = keymap[action.id] ?? action.defaultKeys;
+      const keyDisplay = document.createElement('span');
+      keyDisplay.className = 'value-display';
+      keyDisplay.textContent = keys.map(formatKeyCode).join(' / ');
+      row.appendChild(keyDisplay);
+
+      const rebindBtn = document.createElement('button');
+      rebindBtn.textContent = 'Rebind';
+      rebindBtn.style.cssText = 'background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text-dim); font-family: var(--hud-font); font-size: calc(var(--hud-unit) * 0.7); padding: calc(var(--hud-unit) * 0.2) calc(var(--hud-unit) * 0.5); cursor: pointer;';
+      rebindBtn.addEventListener('click', () => {
+        iniciarRebind(action, keyDisplay, rebindBtn);
+      });
+      row.appendChild(rebindBtn);
+
+      body.appendChild(row);
+    }
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Resetar controles';
+  resetBtn.style.cssText = 'margin-top: calc(var(--hud-unit) * 0.8); background: var(--hud-bg); border: 1px solid var(--hud-border); color: var(--hud-text-dim); font-family: var(--hud-font); padding: calc(var(--hud-unit) * 0.4) calc(var(--hud-unit) * 1); cursor: pointer; width: 100%;';
+  resetBtn.addEventListener('click', () => {
+    setConfig({ input: { bindings: {} } });
+    _refreshBody?.();
+  });
+  body.appendChild(resetBtn);
+}
+
+function iniciarRebind(action: ActionDef, display: HTMLSpanElement, btn: HTMLButtonElement): void {
+  const originalText = btn.textContent;
+  btn.textContent = 'Pressione tecla...';
+  display.textContent = '...';
+  setDispatcherHabilitado(false);
+
+  function cleanup(): void {
+    window.removeEventListener('keydown', handler, true);
+    setDispatcherHabilitado(true);
+    btn.textContent = originalText;
+    const keys = getActiveKeymap()[action.id] ?? action.defaultKeys;
+    display.textContent = keys.map(formatKeyCode).join(' / ');
+  }
+
+  function applyBinding(code: string): void {
+    const currentBindings: Record<string, string[]> = { ...(getConfig().input?.bindings ?? {}) };
+    currentBindings[action.id] = [code];
+    setConfig({ input: { bindings: currentBindings } });
+    cleanup();
+  }
+
+  function handler(e: KeyboardEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.code === 'Escape') {
+      cleanup();
+      return;
+    }
+
+    const conflito = detectarConflito(e.code, action.id);
+    if (conflito) {
+      const conflictAction = ACTION_BY_ID[conflito];
+      const code = e.code;
+      window.removeEventListener('keydown', handler, true);
+      void confirmar({
+        title: 'Conflito de tecla',
+        message: `Já usado por "${conflictAction?.label ?? conflito}". Trocar?`,
+        confirmLabel: 'Trocar',
+        cancelLabel: 'Cancelar',
+      }).then((ok) => {
+        if (!ok) { cleanup(); return; }
+        const currentBindings: Record<string, string[]> = { ...(getConfig().input?.bindings ?? {}) };
+        const conflictCurrent = currentBindings[conflito] ?? conflictAction?.defaultKeys ?? [];
+        const filtered = conflictCurrent.filter((k: string) => k !== code);
+        if (filtered.length === 0) delete currentBindings[conflito];
+        else currentBindings[conflito] = filtered;
+        currentBindings[action.id] = [code];
+        setConfig({ input: { bindings: currentBindings } });
+        cleanup();
+      });
+      return;
+    }
+
+    applyBinding(e.code);
+  }
+
+  window.addEventListener('keydown', handler, true);
 }
 
 // ─── Reset functions (Task 29) ───────────────────────────────────────
